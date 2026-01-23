@@ -42,10 +42,9 @@ class AppTheme {
 
       // Card theme
       cardTheme: const CardThemeData(
-        color: Colors.white,
+        color: cardColor,
         elevation: 4,
         margin: EdgeInsets.all(8),
-        // shape: ...
       ),
 
       // Elevated button theme

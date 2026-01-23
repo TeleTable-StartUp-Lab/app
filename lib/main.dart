@@ -8,6 +8,7 @@ import 'providers/auth_provider.dart';
 import 'providers/robot_control_provider.dart';
 import 'providers/diary_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/control_screen.dart';
 import 'screens/route_planning_screen.dart';
@@ -43,6 +44,10 @@ class TeleTableApp extends StatelessWidget {
                 builder: (context, state) => const LoginScreen(),
               ),
               GoRoute(
+                path: '/register',
+                builder: (context, state) => const RegisterScreen(),
+              ),
+              GoRoute(
                 path: '/home',
                 builder: (context, state) => const HomeScreen(),
               ),
@@ -62,11 +67,12 @@ class TeleTableApp extends StatelessWidget {
             redirect: (context, state) {
               final isAuthenticated = authProvider.isAuthenticated;
               final isLoginRoute = state.matchedLocation == '/login';
+              final isRegisterRoute = state.matchedLocation == '/register';
               
-              if (!isAuthenticated && !isLoginRoute) {
+              if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
                 return '/login';
               }
-              if (isAuthenticated && isLoginRoute) {
+              if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {
                 return '/home';
               }
               return null;

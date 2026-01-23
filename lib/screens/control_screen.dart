@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../providers/robot_control_provider.dart';
 import '../widgets/joystick_widget.dart';
 
@@ -16,6 +17,16 @@ class _ControlScreenState extends State<ControlScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Robot Control'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         actions: [
           Consumer<RobotControlProvider>(
             builder: (context, robotProvider, child) {

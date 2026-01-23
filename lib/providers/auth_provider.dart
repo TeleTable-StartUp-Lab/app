@@ -56,4 +56,26 @@ class AuthProvider with ChangeNotifier {
     
     notifyListeners();
   }
+
+  Future<bool> register(String username, String email, String password) async {
+    try {
+      // TODO: Implement real registration with backend
+      if (username.isEmpty || password.isEmpty) return false;
+
+      // Mock: immediately authenticate after register
+      _isAuthenticated = true;
+      _username = username;
+      _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
+
+      await _prefs.setBool('isAuthenticated', true);
+      await _prefs.setString('username', username);
+      await _prefs.setString('token', _token!);
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Register error: $e');
+      return false;
+    }
+  }
 }

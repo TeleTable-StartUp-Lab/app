@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class RoutePoint {
   final double x;
@@ -41,6 +42,16 @@ class _RoutePlanningScreenState extends State<RoutePlanningScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Route Planning'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add_location),
