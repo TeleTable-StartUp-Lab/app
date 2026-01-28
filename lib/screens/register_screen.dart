@@ -42,11 +42,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (!mounted) return;
       if (ok) {
-        // After register, go to home (auto login) or back to login
+        // After register, go to home (auto login)
         context.go('/home');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registration failed')), 
+          const SnackBar(
+            content: Text('Registration failed. Username may already be taken.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
         );
       }
     }

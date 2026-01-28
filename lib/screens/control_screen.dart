@@ -27,29 +27,6 @@ class _ControlScreenState extends State<ControlScreen> {
             }
           },
         ),
-        actions: [
-          Consumer<RobotControlProvider>(
-            builder: (context, robotProvider, child) {
-              return IconButton(
-                icon: Icon(
-                  robotProvider.isConnected
-                      ? Icons.bluetooth_connected
-                      : Icons.bluetooth_disabled,
-                  color: robotProvider.isConnected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.grey,
-                ),
-                onPressed: () {
-                  if (robotProvider.isConnected) {
-                    robotProvider.disconnect();
-                  } else {
-                    robotProvider.connect();
-                  }
-                },
-              );
-            },
-          ),
-        ],
       ),
       body: Consumer<RobotControlProvider>(
         builder: (context, robotProvider, child) {
@@ -210,28 +187,6 @@ class _ControlScreenState extends State<ControlScreen> {
                             },
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Emergency Stop Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () {
-                              robotProvider.emergencyStop();
-                            },
-                            child: const Text(
-                              'EMERGENCY STOP',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   )
@@ -258,27 +213,6 @@ class _ControlScreenState extends State<ControlScreen> {
                             color: Colors.grey,
                           ),
                           textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-                        ElevatedButton(
-                          onPressed: () {
-                            robotProvider.emergencyStop();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 16,
-                            ),
-                          ),
-                          child: const Text(
-                            'EMERGENCY STOP',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                         ),
                       ],
                     ),

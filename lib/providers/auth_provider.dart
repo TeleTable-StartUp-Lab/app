@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class AuthProvider with ChangeNotifier {
   final SharedPreferences _prefs;
@@ -22,23 +23,54 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Get all registered users
+  Map<String, dynamic> _getRegisteredUsers() {
+    final usersJson = _prefs.getString('registered_users');
+    if (usersJson == null) return {};
+    try {
+      return Map<String, dynamic>.from(json.decode(usersJson));
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // Save registered users
+  Future<void> _saveRegisteredUsers(Map<String, dynamic> users) async {
+    await _prefs.setString('registered_users', json.encode(users));
+  }
+
   Future<bool> login(String username, String password) async {
     try {
-      // TODO: Implement actual authentication with backend
-      // For now, we'll use a simple mock authentication
-      if (username.isNotEmpty && password.isNotEmpty) {
-        _isAuthenticated = true;
-        _username = username;
-        _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
-        
-        await _prefs.setBool('isAuthenticated', true);
-        await _prefs.setString('username', username);
-        await _prefs.setString('token', _token!);
-        
-        notifyListeners();
-        return true;
+      if (username.isEmpty || password.isEmpty) {
+        return false;
       }
-      return false;
+
+      // Check if user is registered
+      final registeredUsers = _getRegisteredUsers();
+      
+      if (!registeredUsers.containsKey(username)) {
+        debugPrint('Login failed: User not registered');
+        return false;
+      }
+
+      // Verify password
+      final userData = registeredUsers[username] as Map<String, dynamic>;
+      if (userData['password'] != password) {
+        debugPrint('Login failed: Invalid password');
+        return false;
+      }
+
+      // Successful login
+      _isAuthenticated = true;
+      _username = username;
+      _token = 'token_${DateTime.now().millisecondsSinceEpoch}';
+      
+      await _prefs.setBool('isAuthenticated', true);
+      await _prefs.setString('username', username);
+      await _prefs.setString('token', _token!);
+      
+      notifyListeners();
+      return true;
     } catch (e) {
       debugPrint('Login error: $e');
       return false;
@@ -59,13 +91,32 @@ class AuthProvider with ChangeNotifier {
 
   Future<bool> register(String username, String email, String password) async {
     try {
-      // TODO: Implement real registration with backend
-      if (username.isEmpty || password.isEmpty) return false;
+      if (username.isEmpty || password.isEmpty) {
+        debugPrint('Registration failed: Username and password required');
+        return false;
+      }
 
-      // Mock: immediately authenticate after register
+      // Check if user already exists
+      final registeredUsers = _getRegisteredUsers();
+      
+      if (registeredUsers.containsKey(username)) {
+        debugPrint('Registration failed: Username already exists');
+        return false;
+      }
+
+      // Register new user
+      registeredUsers[username] = {
+        'email': email,
+        'password': password,
+        'registeredAt': DateTime.now().toIso8601String(),
+      };
+
+      await _saveRegisteredUsers(registeredUsers);
+
+      // Automatically log in after successful registration
       _isAuthenticated = true;
       _username = username;
-      _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
+      _token = 'token_${DateTime.now().millisecondsSinceEpoch}';
 
       await _prefs.setBool('isAuthenticated', true);
       await _prefs.setString('username', username);

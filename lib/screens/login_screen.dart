@@ -42,8 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Login failed. Please check your credentials.'),
+          content: Text('Login failed. Please check your credentials or register first.'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
         ),
       );
     }
