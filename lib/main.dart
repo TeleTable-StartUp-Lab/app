@@ -7,6 +7,7 @@ import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/robot_control_provider.dart';
 import 'providers/diary_provider.dart';
+import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
@@ -28,11 +29,14 @@ class TeleTableApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Create a single ApiService instance to share across providers
+    final apiService = ApiService();
+    
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider(prefs)),
+        ChangeNotifierProvider(create: (_) => AuthProvider(prefs, apiService)),
         ChangeNotifierProvider(create: (_) => RobotControlProvider()),
-        ChangeNotifierProvider(create: (_) => DiaryProvider()),
+        ChangeNotifierProvider(create: (_) => DiaryProvider(apiService)),
       ],
       child: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {

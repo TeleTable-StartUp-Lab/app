@@ -1,78 +1,93 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import '../services/api_service.dart';
 
 class AuthProvider with ChangeNotifier {
   final SharedPreferences _prefs;
+  final ApiService _apiService;
+  
   bool _isAuthenticated = false;
   String? _username;
+  String? _email;
+  String? _userId;
   String? _token;
+  String? _errorMessage;
 
-  AuthProvider(this._prefs) {
+  AuthProvider(this._prefs, this._apiService) {
     _loadAuthState();
   }
 
   bool get isAuthenticated => _isAuthenticated;
   String? get username => _username;
+  String? get email => _email;
+  String? get userId => _userId;
   String? get token => _token;
+  String? get errorMessage => _errorMessage;
 
   Future<void> _loadAuthState() async {
     _isAuthenticated = _prefs.getBool('isAuthenticated') ?? false;
     _username = _prefs.getString('username');
+    _email = _prefs.getString('email');
+    _userId = _prefs.getString('userId');
     _token = _prefs.getString('token');
+    
+    // Initialize API service and load token
+    await _apiService.init();
+    
+    // Verify token is still valid by trying to get user info
+    if (_isAuthenticated && _token != null) {
+      try {
+        final userInfo = await _apiService.getMe();
+        _username = userInfo['name'] as String;
+        _email = userInfo['email'] as String;
+        _userId = userInfo['id'] as String;
+      } catch (e) {
+        debugPrint('Token invalid, logging out: $e');
+        await logout();
+      }
+    }
+    
     notifyListeners();
   }
 
-  // Get all registered users
-  Map<String, dynamic> _getRegisteredUsers() {
-    final usersJson = _prefs.getString('registered_users');
-    if (usersJson == null) return {};
+  Future<bool> login(String email, String password) async {
     try {
-      return Map<String, dynamic>.from(json.decode(usersJson));
-    } catch (e) {
-      return {};
-    }
-  }
-
-  // Save registered users
-  Future<void> _saveRegisteredUsers(Map<String, dynamic> users) async {
-    await _prefs.setString('registered_users', json.encode(users));
-  }
-
-  Future<bool> login(String username, String password) async {
-    try {
-      if (username.isEmpty || password.isEmpty) {
-        return false;
-      }
-
-      // Check if user is registered
-      final registeredUsers = _getRegisteredUsers();
+      _errorMessage = null;
       
-      if (!registeredUsers.containsKey(username)) {
-        debugPrint('Login failed: User not registered');
+      if (email.isEmpty || password.isEmpty) {
+        _errorMessage = 'Email and password are required';
+        notifyListeners();
         return false;
       }
 
-      // Verify password
-      final userData = registeredUsers[username] as Map<String, dynamic>;
-      if (userData['password'] != password) {
-        debugPrint('Login failed: Invalid password');
-        return false;
-      }
+      // Call backend login endpoint
+      final token = await _apiService.login(
+        email: email,
+        password: password,
+      );
 
-      // Successful login
+      // Get user info with the token
+      final userInfo = await _apiService.getMe();
+
+      // Save authentication state
       _isAuthenticated = true;
-      _username = username;
-      _token = 'token_${DateTime.now().millisecondsSinceEpoch}';
+      _username = userInfo['name'] as String;
+      _email = userInfo['email'] as String;
+      _userId = userInfo['id'] as String;
+      _token = token;
       
       await _prefs.setBool('isAuthenticated', true);
-      await _prefs.setString('username', username);
-      await _prefs.setString('token', _token!);
+      await _prefs.setString('username', _username!);
+      await _prefs.setString('email', _email!);
+      await _prefs.setString('userId', _userId!);
+      await _prefs.setString('token', token);
       
       notifyListeners();
       return true;
     } catch (e) {
       debugPrint('Login error: $e');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
       return false;
     }
   }
@@ -80,53 +95,54 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout() async {
     _isAuthenticated = false;
     _username = null;
+    _email = null;
+    _userId = null;
     _token = null;
+    _errorMessage = null;
+    
+    await _apiService.clearToken();
     
     await _prefs.remove('isAuthenticated');
     await _prefs.remove('username');
+    await _prefs.remove('email');
+    await _prefs.remove('userId');
     await _prefs.remove('token');
     
     notifyListeners();
   }
 
-  Future<bool> register(String username, String email, String password) async {
+  Future<bool> register(String name, String email, String password) async {
     try {
-      if (username.isEmpty || password.isEmpty) {
-        debugPrint('Registration failed: Username and password required');
-        return false;
-      }
-
-      // Check if user already exists
-      final registeredUsers = _getRegisteredUsers();
+      _errorMessage = null;
       
-      if (registeredUsers.containsKey(username)) {
-        debugPrint('Registration failed: Username already exists');
+      if (name.isEmpty || email.isEmpty || password.isEmpty) {
+        _errorMessage = 'All fields are required';
+        notifyListeners();
         return false;
       }
 
-      // Register new user
-      registeredUsers[username] = {
-        'email': email,
-        'password': password,
-        'registeredAt': DateTime.now().toIso8601String(),
-      };
+      // Call backend register endpoint
+      final userResponse = await _apiService.register(
+        name: name,
+        email: email,
+        password: password,
+      );
 
-      await _saveRegisteredUsers(registeredUsers);
+      debugPrint('Registration successful: $userResponse');
 
       // Automatically log in after successful registration
-      _isAuthenticated = true;
-      _username = username;
-      _token = 'token_${DateTime.now().millisecondsSinceEpoch}';
-
-      await _prefs.setBool('isAuthenticated', true);
-      await _prefs.setString('username', username);
-      await _prefs.setString('token', _token!);
-
-      notifyListeners();
-      return true;
+      return await login(email, password);
     } catch (e) {
       debugPrint('Register error: $e');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
       return false;
     }
+  }
+
+  // Clear error message
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
   }
 }

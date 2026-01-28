@@ -755,12 +755,26 @@ class _DiaryContentState extends State<_DiaryContent> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 8),
-                          Text(
-                            _formatDate(entry.createdAt),
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                            ),
+                          Row(
+                            children: [
+                              Icon(Icons.timer, size: 14, color: Colors.grey),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${entry.workingMinutes} min',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                _formatDate(entry.createdAt),
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -815,6 +829,7 @@ class _DiaryContentState extends State<_DiaryContent> {
   void _showAddEntryDialog(BuildContext context) {
     String title = '';
     String content = '';
+    int workingMinutes = 60;
 
     showDialog(
       context: context,
@@ -831,6 +846,16 @@ class _DiaryContentState extends State<_DiaryContent> {
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (value) => title = value,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Working Minutes',
+                    border: OutlineInputBorder(),
+                    hintText: '60',
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (value) => workingMinutes = int.tryParse(value) ?? 60,
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -853,7 +878,7 @@ class _DiaryContentState extends State<_DiaryContent> {
               onPressed: () {
                 if (title.isNotEmpty && content.isNotEmpty) {
                   Provider.of<DiaryProvider>(context, listen: false)
-                      .addEntry(title, content, []);
+                      .addEntry(title, content, workingMinutes);
                   Navigator.of(context).pop();
                 }
               },
@@ -868,6 +893,7 @@ class _DiaryContentState extends State<_DiaryContent> {
   void _showEditEntryDialog(BuildContext context, DiaryEntry entry, int index) {
     String title = entry.title;
     String content = entry.content;
+    int workingMinutes = entry.workingMinutes;
 
     showDialog(
       context: context,
@@ -885,6 +911,16 @@ class _DiaryContentState extends State<_DiaryContent> {
                   ),
                   controller: TextEditingController(text: title),
                   onChanged: (value) => title = value,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Working Minutes',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: workingMinutes.toString()),
+                  onChanged: (value) => workingMinutes = int.tryParse(value) ?? workingMinutes,
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -910,7 +946,7 @@ class _DiaryContentState extends State<_DiaryContent> {
                   final updatedEntry = entry.copyWith(
                     title: title,
                     content: content,
-                    tags: [],
+                    workingMinutes: workingMinutes,
                   );
                   
                   Provider.of<DiaryProvider>(context, listen: false)
@@ -966,6 +1002,17 @@ class _DiaryContentState extends State<_DiaryContent> {
               children: [
                 Text(entry.content),
                 const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.timer, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Working time: ${entry.workingMinutes} minutes',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Text(
                   'Created: ${_formatDate(entry.createdAt)}',
                   style: TextStyle(color: Colors.grey, fontSize: 12),

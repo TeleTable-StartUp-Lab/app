@@ -1,37 +1,38 @@
 import 'package:flutter/foundation.dart';
+import '../services/api_service.dart';
 
 class DiaryEntry {
   final String id;
   final String title;
   final String content;
+  final int workingMinutes;
   final DateTime createdAt;
   final DateTime updatedAt;
-  final List<String> tags;
 
   DiaryEntry({
     required this.id,
     required this.title,
     required this.content,
+    required this.workingMinutes,
     required this.createdAt,
     required this.updatedAt,
-    this.tags = const [],
   });
 
   DiaryEntry copyWith({
     String? id,
     String? title,
     String? content,
+    int? workingMinutes,
     DateTime? createdAt,
     DateTime? updatedAt,
-    List<String>? tags,
   }) {
     return DiaryEntry(
       id: id ?? this.id,
       title: title ?? this.title,
       content: content ?? this.content,
+      workingMinutes: workingMinutes ?? this.workingMinutes,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      tags: tags ?? this.tags,
     );
   }
 
@@ -40,28 +41,39 @@ class DiaryEntry {
       'id': id,
       'title': title,
       'content': content,
+      'workingMinutes': workingMinutes,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
-      'tags': tags,
     };
   }
 
   factory DiaryEntry.fromJson(Map<String, dynamic> json) {
+    // Parse title and content from backend's "text" field
+    // Backend stores everything in "text", we split it into title and content
+    final text = json['text'] as String? ?? '';
+    final lines = text.split('\n');
+    final title = lines.isNotEmpty ? lines.first : 'No title';
+    final content = lines.length > 1 ? lines.sublist(1).join('\n') : '';
+    
     return DiaryEntry(
-      id: json['id'],
-      title: json['title'],
-      content: json['content'],
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
-      tags: List<String>.from(json['tags'] ?? []),
+      id: json['id'] as String,
+      title: title,
+      content: content,
+      workingMinutes: json['working_minutes'] as int? ?? 0,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
 }
 
 class DiaryProvider with ChangeNotifier {
+  final ApiService _apiService;
+  
   List<DiaryEntry> _entries = [];
   bool _isLoading = false;
   String? _error;
+
+  DiaryProvider(this._apiService);
 
   List<DiaryEntry> get entries => _entries;
   bool get isLoading => _isLoading;
@@ -74,83 +86,82 @@ class DiaryProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement actual API call to fetch entries from server
-      await Future.delayed(const Duration(seconds: 1)); // Mock delay
-      
-      // Mock data for now
-      _entries = [
-        DiaryEntry(
-          id: '1',
-          title: 'Robot Setup Day 1',
-          content: 'Today we started setting up the robot. Everything went smoothly.',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          updatedAt: DateTime.now().subtract(const Duration(days: 2)),
-          tags: ['setup', 'hardware'],
-        ),
-        DiaryEntry(
-          id: '2',
-          title: 'Testing Movement Controls',
-          content: 'Tested the joystick controls. The robot responds well to manual commands.',
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-          updatedAt: DateTime.now().subtract(const Duration(days: 1)),
-          tags: ['testing', 'controls'],
-        ),
-      ];
+      final data = await _apiService.getDiaryEntries();
+      _entries = data.map((json) => DiaryEntry.fromJson(json)).toList();
       
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
       notifyListeners();
     }
   }
 
   // Add new entry
-  Future<void> addEntry(String title, String content, List<String> tags) async {
+  Future<bool> addEntry(String title, String content, int workingMinutes) async {
     try {
-      final newEntry = DiaryEntry(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: title,
-        content: content,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        tags: tags,
+      _error = null;
+      
+      // Combine title and content for backend's "text" field
+      final text = '$title\n$content';
+      
+      final data = await _apiService.createDiaryEntry(
+        workingMinutes: workingMinutes,
+        text: text,
       );
-
-      // TODO: Send to server
+      
+      final newEntry = DiaryEntry.fromJson(data);
       _entries.insert(0, newEntry);
       notifyListeners();
+      return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
+      return false;
     }
   }
 
   // Update entry
-  Future<void> updateEntry(DiaryEntry updatedEntry) async {
+  Future<bool> updateEntry(DiaryEntry entry) async {
     try {
-      final index = _entries.indexWhere((entry) => entry.id == updatedEntry.id);
+      _error = null;
+      
+      // Combine title and content for backend's "text" field
+      final text = '${entry.title}\n${entry.content}';
+      
+      final data = await _apiService.updateDiaryEntry(
+        id: entry.id,
+        workingMinutes: entry.workingMinutes,
+        text: text,
+      );
+      
+      final updatedEntry = DiaryEntry.fromJson(data);
+      final index = _entries.indexWhere((e) => e.id == entry.id);
       if (index != -1) {
-        _entries[index] = updatedEntry.copyWith(updatedAt: DateTime.now());
+        _entries[index] = updatedEntry;
         notifyListeners();
-        // TODO: Send update to server
       }
+      return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
+      return false;
     }
   }
 
   // Delete entry
-  Future<void> deleteEntry(String id) async {
+  Future<bool> deleteEntry(String id) async {
     try {
+      _error = null;
+      await _apiService.deleteDiaryEntry(id);
       _entries.removeWhere((entry) => entry.id == id);
       notifyListeners();
-      // TODO: Send delete request to server
+      return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
+      return false;
     }
   }
 

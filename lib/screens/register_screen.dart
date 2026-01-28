@@ -46,10 +46,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context.go('/home');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration failed. Username may already be taken.'),
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Registration failed.'),
             backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
