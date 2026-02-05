@@ -11,6 +11,7 @@ class AuthProvider with ChangeNotifier {
   String? _email;
   String? _userId;
   String? _token;
+  String _role = 'viewer';
   String? _errorMessage;
 
   AuthProvider(this._prefs, this._apiService) {
@@ -22,6 +23,10 @@ class AuthProvider with ChangeNotifier {
   String? get email => _email;
   String? get userId => _userId;
   String? get token => _token;
+  String get role => _role;
+  bool get isAdmin => _role == 'admin';
+  bool get isOperator => _role == 'operator';
+  bool get isViewer => _role == 'viewer';
   String? get errorMessage => _errorMessage;
 
   Future<void> _loadAuthState() async {
@@ -30,6 +35,7 @@ class AuthProvider with ChangeNotifier {
     _email = _prefs.getString('email');
     _userId = _prefs.getString('userId');
     _token = _prefs.getString('token');
+    _role = _prefs.getString('role') ?? 'viewer';
     
     // Initialize API service and load token
     await _apiService.init();
@@ -41,6 +47,7 @@ class AuthProvider with ChangeNotifier {
         _username = userInfo['name'] as String;
         _email = userInfo['email'] as String;
         _userId = userInfo['id'] as String;
+        _role = userInfo['role'] as String? ?? 'viewer';
       } catch (e) {
         debugPrint('Token invalid, logging out: $e');
         await logout();
@@ -75,12 +82,14 @@ class AuthProvider with ChangeNotifier {
       _email = userInfo['email'] as String;
       _userId = userInfo['id'] as String;
       _token = token;
+      _role = userInfo['role'] as String? ?? 'viewer';
       
       await _prefs.setBool('isAuthenticated', true);
       await _prefs.setString('username', _username!);
       await _prefs.setString('email', _email!);
       await _prefs.setString('userId', _userId!);
       await _prefs.setString('token', token);
+      await _prefs.setString('role', _role);
       
       notifyListeners();
       return true;
@@ -99,6 +108,7 @@ class AuthProvider with ChangeNotifier {
     _userId = null;
     _token = null;
     _errorMessage = null;
+    _role = 'viewer';
     
     await _apiService.clearToken();
     
@@ -107,6 +117,7 @@ class AuthProvider with ChangeNotifier {
     await _prefs.remove('email');
     await _prefs.remove('userId');
     await _prefs.remove('token');
+    await _prefs.remove('role');
     
     notifyListeners();
   }

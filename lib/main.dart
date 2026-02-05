@@ -35,7 +35,7 @@ class TeleTableApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider(prefs, apiService)),
-        ChangeNotifierProvider(create: (_) => RobotControlProvider()),
+        ChangeNotifierProvider(create: (_) => RobotControlProvider(apiService)),
         ChangeNotifierProvider(create: (_) => DiaryProvider(apiService)),
       ],
       child: Consumer<AuthProvider>(

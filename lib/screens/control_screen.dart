@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -59,9 +60,9 @@ class _ControlScreenState extends State<ControlScreen> {
                         ElevatedButton(
                           onPressed: () {
                             if (robotProvider.isConnected) {
-                              robotProvider.disconnect();
+                              unawaited(robotProvider.disconnect());
                             } else {
-                              robotProvider.connect();
+                              unawaited(robotProvider.connect());
                             }
                           },
                           child: Text(
@@ -91,8 +92,10 @@ class _ControlScreenState extends State<ControlScreen> {
                             Switch(
                               value: robotProvider.currentMode == RobotMode.automatic,
                               onChanged: (value) {
-                                robotProvider.switchMode(
-                                  value ? RobotMode.automatic : RobotMode.manual,
+                                unawaited(
+                                  robotProvider.switchMode(
+                                    value ? RobotMode.automatic : RobotMode.manual,
+                                  ),
                                 );
                               },
                             ),
@@ -160,7 +163,7 @@ class _ControlScreenState extends State<ControlScreen> {
                           max: 100,
                           divisions: 10,
                           onChanged: (value) {
-                            robotProvider.updateSpeed(value);
+                            unawaited(robotProvider.updateSpeed(value));
                           },
                         ),
                       ],
@@ -183,7 +186,7 @@ class _ControlScreenState extends State<ControlScreen> {
                         Expanded(
                           child: JoystickWidget(
                             onChanged: (x, y) {
-                              robotProvider.updateJoystick(x, y);
+                              unawaited(robotProvider.updateJoystick(x, y));
                             },
                           ),
                         ),
