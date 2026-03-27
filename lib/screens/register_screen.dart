@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/auth_provider.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       if (ok) {
         // After register, go to home (auto login)
-        context.go('/home');
+        context.go('/dashboard');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -89,14 +90,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Center(
+                      child: SvgPicture.asset(
+                        'assets/branding/favicon.svg',
+                        width: 72,
+                        height: 72,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      'Welcome to TeleTable',
+                      'Create your account',
                       style: Theme.of(context).textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Create your account to continue',
+                      'Join TeleTable and access the dashboard',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
                       textAlign: TextAlign.center,
                     ),

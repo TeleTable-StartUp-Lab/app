@@ -10,10 +10,10 @@ import 'providers/diary_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/control_screen.dart';
-import 'screens/route_planning_screen.dart';
+import 'screens/dashboard_screen.dart';
 import 'screens/diary_screen.dart';
+import 'screens/queue_control_screen.dart';
+import 'screens/admin_panel_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,14 +34,15 @@ class TeleTableApp extends StatelessWidget {
     
     return MultiProvider(
       providers: [
+        Provider<ApiService>.value(value: apiService),
         ChangeNotifierProvider(create: (_) => AuthProvider(prefs, apiService)),
-        ChangeNotifierProvider(create: (_) => RobotControlProvider()),
+        ChangeNotifierProvider(create: (_) => RobotControlProvider(apiService)),
         ChangeNotifierProvider(create: (_) => DiaryProvider(apiService)),
       ],
       child: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {
           final GoRouter router = GoRouter(
-            initialLocation: authProvider.isAuthenticated ? '/home' : '/login',
+            initialLocation: authProvider.isAuthenticated ? '/dashboard' : '/login',
             routes: [
               GoRoute(
                 path: '/login',
@@ -53,38 +54,48 @@ class TeleTableApp extends StatelessWidget {
               ),
               GoRoute(
                 path: '/home',
-                builder: (context, state) => const HomeScreen(),
+                builder: (context, state) => const DashboardScreen(),
               ),
               GoRoute(
-                path: '/control',
-                builder: (context, state) => const ControlScreen(),
-              ),
-              GoRoute(
-                path: '/route-planning',
-                builder: (context, state) => const RoutePlanningScreen(),
+                path: '/dashboard',
+                builder: (context, state) => const DashboardScreen(),
               ),
               GoRoute(
                 path: '/diary',
                 builder: (context, state) => const DiaryScreen(),
               ),
+              GoRoute(
+                path: '/queue',
+                builder: (context, state) => const QueueControlScreen(),
+              ),
+              GoRoute(
+                path: '/admin',
+                builder: (context, state) => const AdminPanelScreen(),
+              ),
             ],
             redirect: (context, state) {
               final isAuthenticated = authProvider.isAuthenticated;
+              final isAdmin = authProvider.isAdmin;
               final isLoginRoute = state.matchedLocation == '/login';
               final isRegisterRoute = state.matchedLocation == '/register';
+              final isAdminRoute = state.matchedLocation == '/admin';
+              final isQueueRoute = state.matchedLocation == '/queue';
               
               if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
                 return '/login';
               }
               if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {
-                return '/home';
+                return '/dashboard';
+              }
+              if ((isAdminRoute || isQueueRoute) && !isAdmin) {
+                return '/dashboard';
               }
               return null;
             },
           );
 
           return MaterialApp.router(
-            title: 'TeleTable Robot Control',
+            title: 'TeleTable',
             theme: AppTheme.darkTheme,
             routerConfig: router,
             debugShowCheckedModeBanner: false,

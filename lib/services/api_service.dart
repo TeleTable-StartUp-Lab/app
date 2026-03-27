@@ -3,11 +3,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // Backend URL - IMPORTANT: 
-  // - iOS Simulator: Use 'http://localhost:3003'
-  // - Android Emulator: Use 'http://10.0.2.2:3003'
-  // - Physical Device: Use your computer's IP (e.g., 'http://192.168.1.100:3003')
-  static const String baseUrl = 'http://localhost:3003';
+  // Override with: flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3003
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://teletable.net/api',
+  );
   
   static const String _tokenKey = 'auth_token';
   String? _token;
@@ -34,6 +34,7 @@ class ApiService {
   
   // Check if user is logged in
   bool get isLoggedIn => _token != null;
+  String? get token => _token;
   
   // Get authorization headers
   Map<String, String> get _headers {
@@ -47,6 +48,28 @@ class ApiService {
     
     return headers;
   }
+
+  dynamic _parseBody(http.Response response) {
+    if (response.body.isEmpty) {
+      return null;
+    }
+    try {
+      return jsonDecode(response.body);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Exception _buildException(http.Response response, String fallback) {
+    final parsed = _parseBody(response);
+    if (parsed is Map<String, dynamic>) {
+      final error = parsed['error'] ?? parsed['message'];
+      if (error is String && error.isNotEmpty) {
+        return Exception(error);
+      }
+    }
+    return Exception(fallback);
+  }
   
   // Auth endpoints
   
@@ -58,6 +81,7 @@ class ApiService {
     required String name,
     required String email,
     required String password,
+    Map<String, dynamic>? fingerprintData,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/register'),
@@ -66,14 +90,14 @@ class ApiService {
         'name': name,
         'email': email,
         'password': password,
+        if (fingerprintData != null) 'fingerprintData': fingerprintData,
       }),
     );
     
     if (response.statusCode == 201) {
-      return jsonDecode(response.body);
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Registration failed');
+      throw _buildException(response, 'Registration failed');
     }
   }
   
@@ -84,6 +108,7 @@ class ApiService {
   Future<String> login({
     required String email,
     required String password,
+    Map<String, dynamic>? fingerprintData,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/login'),
@@ -91,17 +116,17 @@ class ApiService {
       body: jsonEncode({
         'email': email,
         'password': password,
+        if (fingerprintData != null) 'fingerprintData': fingerprintData,
       }),
     );
     
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = _parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{};
       final token = data['token'] as String;
       setToken(token);
       return token;
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Login failed');
+      throw _buildException(response, 'Login failed');
     }
   }
   
@@ -115,10 +140,9 @@ class ApiService {
     );
     
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Failed to get user info');
+      throw _buildException(response, 'Failed to get user info');
     }
   }
   
@@ -134,11 +158,10 @@ class ApiService {
     );
     
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as List;
+      final data = (_parseBody(response) as List? ?? <dynamic>[]);
       return data.cast<Map<String, dynamic>>();
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Failed to get diary entries');
+      throw _buildException(response, 'Failed to get diary entries');
     }
   }
   
@@ -160,10 +183,9 @@ class ApiService {
     );
     
     if (response.statusCode == 201) {
-      return jsonDecode(response.body);
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Failed to create diary entry');
+      throw _buildException(response, 'Failed to create diary entry');
     }
   }
   
@@ -187,10 +209,9 @@ class ApiService {
     );
     
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Failed to update diary entry');
+      throw _buildException(response, 'Failed to update diary entry');
     }
   }
   
@@ -207,28 +228,11 @@ class ApiService {
     );
     
     if (response.statusCode != 204) {
-      final error = jsonDecode(response.body);
-      throw Exception(error['error'] ?? 'Failed to delete diary entry');
+      throw _buildException(response, 'Failed to delete diary entry');
     }
   }
   
-  // Robot control endpoints (for future implementation)
-  
-  /// Get robot status
-  /// GET /status
-  /// Returns: Robot telemetry and status
-  Future<Map<String, dynamic>> getRobotStatus() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/status'),
-      headers: {'Content-Type': 'application/json'},
-    );
-    
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to get robot status');
-    }
-  }
+  // Robot control endpoints
   
   /// Get available nodes for navigation
   /// GET /nodes
@@ -240,10 +244,10 @@ class ApiService {
     );
     
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = _parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{};
       return (data['nodes'] as List).cast<String>();
     } else {
-      return [];
+      throw _buildException(response, 'Failed to get nodes');
     }
   }
   
@@ -264,10 +268,165 @@ class ApiService {
     );
     
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
     } else {
-      final error = jsonDecode(response.body);
-      throw Exception(error['message'] ?? 'Failed to select route');
+      throw _buildException(response, 'Failed to select route');
     }
+  }
+
+  Future<Map<String, dynamic>> acquireDriveLock() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/drive/lock'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
+    }
+    throw _buildException(response, 'Failed to acquire drive lock');
+  }
+
+  Future<Map<String, dynamic>> releaseDriveLock() async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/drive/lock'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
+    }
+    throw _buildException(response, 'Failed to release drive lock');
+  }
+
+  Future<Map<String, dynamic>> checkRobotConnection() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/robot/check'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
+    }
+    throw _buildException(response, 'Failed to check robot connection');
+  }
+
+  Future<List<Map<String, dynamic>>> getRobotNotifications({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/robot/notifications?limit=$limit&offset=$offset'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final data = _parseBody(response) as List? ?? <dynamic>[];
+      return data.cast<Map<String, dynamic>>();
+    }
+    throw _buildException(response, 'Failed to load robot notifications');
+  }
+
+  // Queue endpoints
+
+  Future<List<Map<String, dynamic>>> getRoutes() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/routes'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final data = _parseBody(response) as List? ?? <dynamic>[];
+      return data.cast<Map<String, dynamic>>();
+    }
+    throw _buildException(response, 'Failed to load routes');
+  }
+
+  Future<void> deleteRoute(String id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/routes/$id'),
+      headers: _headers,
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw _buildException(response, 'Failed to delete route');
+    }
+  }
+
+  Future<Map<String, dynamic>> optimizeRoutes() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/routes/optimize'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
+    }
+    throw _buildException(response, 'Failed to optimize routes');
+  }
+
+  // Admin endpoints
+
+  Future<List<Map<String, dynamic>>> getUsers() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/users'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final data = _parseBody(response) as List? ?? <dynamic>[];
+      return data.cast<Map<String, dynamic>>();
+    }
+    throw _buildException(response, 'Failed to load users');
+  }
+
+  Future<Map<String, dynamic>> updateUser({
+    required String id,
+    String? name,
+    String? email,
+    String? role,
+    String? password,
+  }) async {
+    final payload = <String, dynamic>{'id': id};
+    if (name != null) payload['name'] = name;
+    if (email != null) payload['email'] = email;
+    if (role != null) payload['role'] = role;
+    if (password != null && password.isNotEmpty) payload['password'] = password;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/user'),
+      headers: _headers,
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode == 200) {
+      return (_parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{});
+    }
+    throw _buildException(response, 'Failed to update user');
+  }
+
+  Future<void> deleteUser(String id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/user'),
+      headers: _headers,
+      body: jsonEncode({'id': id}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw _buildException(response, 'Failed to delete user');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getUserSessions(String userId) async {
+    final primary = await http.get(
+      Uri.parse('$baseUrl/users/$userId/sessions'),
+      headers: _headers,
+    );
+
+    if (primary.statusCode == 200) {
+      final data = _parseBody(primary) as List? ?? <dynamic>[];
+      return data.cast<Map<String, dynamic>>();
+    }
+
+    final fallback = await http.get(
+      Uri.parse('$baseUrl/user/$userId/sessions'),
+      headers: _headers,
+    );
+
+    if (fallback.statusCode == 200) {
+      final data = _parseBody(fallback) as List? ?? <dynamic>[];
+      return data.cast<Map<String, dynamic>>();
+    }
+
+    throw _buildException(fallback, 'Failed to load sessions');
   }
 }

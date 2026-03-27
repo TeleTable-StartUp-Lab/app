@@ -11,6 +11,9 @@ class AuthProvider with ChangeNotifier {
   String? _email;
   String? _userId;
   String? _token;
+  String _role = 'Viewer';
+  DateTime? _createdAt;
+  DateTime? _lastSignOn;
   String? _errorMessage;
 
   AuthProvider(this._prefs, this._apiService) {
@@ -22,6 +25,11 @@ class AuthProvider with ChangeNotifier {
   String? get email => _email;
   String? get userId => _userId;
   String? get token => _token;
+  String get role => _role;
+  bool get isAdmin => _role == 'Admin';
+  bool get canOperate => _role == 'Admin' || _role == 'Operator';
+  DateTime? get createdAt => _createdAt;
+  DateTime? get lastSignOn => _lastSignOn;
   String? get errorMessage => _errorMessage;
 
   Future<void> _loadAuthState() async {
@@ -30,6 +38,7 @@ class AuthProvider with ChangeNotifier {
     _email = _prefs.getString('email');
     _userId = _prefs.getString('userId');
     _token = _prefs.getString('token');
+    _role = _prefs.getString('role') ?? 'Viewer';
     
     // Initialize API service and load token
     await _apiService.init();
@@ -38,9 +47,7 @@ class AuthProvider with ChangeNotifier {
     if (_isAuthenticated && _token != null) {
       try {
         final userInfo = await _apiService.getMe();
-        _username = userInfo['name'] as String;
-        _email = userInfo['email'] as String;
-        _userId = userInfo['id'] as String;
+        _applyUserInfo(userInfo);
       } catch (e) {
         debugPrint('Token invalid, logging out: $e');
         await logout();
@@ -71,15 +78,20 @@ class AuthProvider with ChangeNotifier {
 
       // Save authentication state
       _isAuthenticated = true;
-      _username = userInfo['name'] as String;
-      _email = userInfo['email'] as String;
-      _userId = userInfo['id'] as String;
       _token = token;
+      _applyUserInfo(userInfo);
       
       await _prefs.setBool('isAuthenticated', true);
-      await _prefs.setString('username', _username!);
-      await _prefs.setString('email', _email!);
-      await _prefs.setString('userId', _userId!);
+      if (_username != null) {
+        await _prefs.setString('username', _username!);
+      }
+      if (_email != null) {
+        await _prefs.setString('email', _email!);
+      }
+      if (_userId != null) {
+        await _prefs.setString('userId', _userId!);
+      }
+      await _prefs.setString('role', _role);
       await _prefs.setString('token', token);
       
       notifyListeners();
@@ -98,6 +110,9 @@ class AuthProvider with ChangeNotifier {
     _email = null;
     _userId = null;
     _token = null;
+    _role = 'Viewer';
+    _createdAt = null;
+    _lastSignOn = null;
     _errorMessage = null;
     
     await _apiService.clearToken();
@@ -106,6 +121,7 @@ class AuthProvider with ChangeNotifier {
     await _prefs.remove('username');
     await _prefs.remove('email');
     await _prefs.remove('userId');
+    await _prefs.remove('role');
     await _prefs.remove('token');
     
     notifyListeners();
@@ -144,5 +160,17 @@ class AuthProvider with ChangeNotifier {
   void clearError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  void _applyUserInfo(Map<String, dynamic> userInfo) {
+    _username = userInfo['name'] as String?;
+    _email = userInfo['email'] as String?;
+    _userId = userInfo['id'] as String?;
+    _role = (userInfo['role'] as String?) ?? 'Viewer';
+
+    final createdAtRaw = userInfo['created_at'] as String?;
+    final lastSignOnRaw = userInfo['last_sign_on'] as String?;
+    _createdAt = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null;
+    _lastSignOn = lastSignOnRaw != null ? DateTime.tryParse(lastSignOnRaw) : null;
   }
 }
