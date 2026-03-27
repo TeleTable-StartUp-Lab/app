@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/robot_control_provider.dart';
+import '../widgets/joystick_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -16,17 +17,17 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _manualStepController = TextEditingController(text: '0.5');
-  final _beepHzController = TextEditingController(text: '880');
-  final _beepMsController = TextEditingController(text: '150');
-
+  int _tabIndex = 0;
   String _startNode = '';
   String _destinationNode = '';
   double _volume = 0.3;
   double _brightness = 40;
   bool _ledEnabled = true;
   Color _ledColor = const Color(0xFFFFB450);
-  Timer? _clearFeedbackTimer;
+  Timer? _lastDriveThrottle;
+
+  final _beepHzController = TextEditingController(text: '880');
+  final _beepMsController = TextEditingController(text: '150');
 
   @override
   void initState() {
@@ -40,10 +41,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
-    _manualStepController.dispose();
     _beepHzController.dispose();
     _beepMsController.dispose();
-    _clearFeedbackTimer?.cancel();
+    _lastDriveThrottle?.cancel();
     super.dispose();
   }
 
@@ -59,8 +59,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             SvgPicture.asset(
               'assets/branding/favicon.svg',
-              width: 24,
-              height: 24,
+              width: 22,
+              height: 22,
             ),
             const SizedBox(width: 8),
             RichText(
@@ -74,7 +74,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     text: 'Table',
                     style: TextStyle(color: Theme.of(context).colorScheme.primary),
                   ),
-                  const TextSpan(text: ' Dashboard', style: TextStyle(color: Colors.white)),
                 ],
               ),
             ),
@@ -82,27 +81,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Notifications',
+            tooltip: 'All alerts',
             onPressed: () => _openNotifications(context, robot),
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications_outlined),
-                if (robot.notifications.isNotEmpty)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            icon: const Icon(Icons.notifications_outlined),
           ),
           IconButton(
             tooltip: 'Logout',
@@ -116,372 +97,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await robot.getNodes();
-          await robot.loadNotificationHistory();
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _TelemetryCard(
-              health: status.systemHealth,
-              batteryLevel: status.batteryLevel,
-              driveMode: status.driveMode,
-              cargoStatus: status.cargoStatus,
-              position: status.position,
-              robotConnected: status.robotConnected,
-              eventsWsStatus: robot.eventsWsStatus,
-              manualLockHolderName: status.manualLockHolderName,
-              lastRoute: status.lastRoute,
-            ),
-            const SizedBox(height: 16),
-            if (!auth.canOperate)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Read-only access: manual and route controls are disabled for Viewer accounts.',
-                  ),
-                ),
-              ),
-            if (auth.canOperate) ...[
-              _buildManualControlCard(robot),
-              const SizedBox(height: 16),
-              _buildAutoControlCard(auth, robot),
-              const SizedBox(height: 16),
-              if (auth.isAdmin) _buildPeripheralCard(robot),
-              if (auth.isAdmin) const SizedBox(height: 16),
-            ],
-            if (auth.isAdmin) _buildAdminActions(context),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildManualControlCard(RobotControlProvider robot) {
-    final isConnected = robot.manualWsStatus == 'connected';
-    final step = double.tryParse(_manualStepController.text) ?? 0.5;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: () async {
+              await robot.getNodes();
+              await robot.loadNotificationHistory();
+            },
+            child: IndexedStack(
+              index: _tabIndex,
               children: [
-                const Icon(Icons.sports_esports),
-                const SizedBox(width: 8),
-                const Text('Manual Control', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                _StatusChip(label: 'WS: ${robot.manualWsStatus}'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: isConnected
-                        ? null
-                        : () async {
-                            try {
-                              final result = await robot.acquireLock();
-                              robot.connectManualWs();
-                              _setFeedback(result['message']?.toString() ?? 'Lock acquired');
-                            } catch (e) {
-                              _setFeedback('Failed to acquire lock: $e', isError: true);
-                            }
-                          },
-                    icon: const Icon(Icons.link),
-                    label: const Text('Connect'),
-                  ),
+                _OverviewTab(status: status, eventsWsStatus: robot.eventsWsStatus),
+                _DriveTab(
+                  canOperate: auth.canOperate,
+                  manualWsStatus: robot.manualWsStatus,
+                  manualWsError: robot.manualWsError,
+                  onConnect: () async {
+                    try {
+                      final result = await robot.acquireLock();
+                      robot.connectManualWs();
+                      if (!mounted) return;
+                      _showFeedback(result['message']?.toString() ?? 'Drive lock acquired');
+                    } catch (e) {
+                      if (!mounted) return;
+                      _showFeedback('Failed to acquire lock: $e', isError: true);
+                    }
+                  },
+                  onDisconnect: () async {
+                    robot.disconnectManualWs();
+                    try {
+                      final result = await robot.releaseLock();
+                      if (!mounted) return;
+                      _showFeedback(result['message']?.toString() ?? 'Drive lock released');
+                    } catch (e) {
+                      if (!mounted) return;
+                      _showFeedback('Failed to release lock: $e', isError: true);
+                    }
+                  },
+                  onJoystickChanged: (x, y) => _sendDriveFromJoystick(robot, x, y),
+                  onEmergencyStop: () {
+                    final ok = robot.sendCommand({
+                      'command': 'DRIVE_COMMAND',
+                      'linear_velocity': 0,
+                      'angular_velocity': 0,
+                    });
+                    if (!ok) {
+                      _showFeedback('Manual WebSocket is not connected', isError: true);
+                    }
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      robot.disconnectManualWs();
-                      try {
-                        final result = await robot.releaseLock();
-                        _setFeedback(result['message']?.toString() ?? 'Lock released');
-                      } catch (e) {
-                        _setFeedback('Failed to release lock: $e', isError: true);
-                      }
-                    },
-                    icon: const Icon(Icons.power_settings_new),
-                    label: const Text('Disconnect'),
-                  ),
+                _RoutesTab(
+                  canOperate: auth.canOperate,
+                  isAdmin: auth.isAdmin,
+                  nodes: robot.nodes,
+                  startNode: _startNode,
+                  destinationNode: _destinationNode,
+                  onStartChanged: (value) => setState(() => _startNode = value ?? ''),
+                  onDestinationChanged: (value) => setState(() => _destinationNode = value ?? ''),
+                  onRefreshNodes: () => robot.getNodes(),
+                  onSelectRoute: () async {
+                    if (_startNode.isEmpty || _destinationNode.isEmpty) return;
+                    try {
+                      final response = await robot.selectRoute(_startNode, _destinationNode);
+                      if (!mounted) return;
+                      _showFeedback(response['message']?.toString() ?? 'Route queued');
+                    } catch (e) {
+                      if (!mounted) return;
+                      _showFeedback('Failed to select route: $e', isError: true);
+                    }
+                  },
+                  onNavigateWs: () {
+                    final ok = robot.sendCommand({
+                      'command': 'NAVIGATE',
+                      'start': _startNode,
+                      'destination': _destinationNode,
+                    });
+                    _showFeedback(ok ? 'Navigate command sent' : 'Manual WebSocket not connected', isError: !ok);
+                  },
+                  onCancelWs: () {
+                    final ok = robot.sendCommand({'command': 'CANCEL'});
+                    _showFeedback(ok ? 'Cancel command sent' : 'Manual WebSocket not connected', isError: !ok);
+                  },
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _manualStepController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Linear speed step',
-                helperText: 'Suggested: 0.2 to 1.0',
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _DriveButton(
-                  icon: Icons.arrow_upward,
-                  onPressed: isConnected
-                      ? () => _sendDrive(robot, linear: step, angular: 0)
-                      : null,
-                ),
-                _DriveButton(
-                  icon: Icons.arrow_back,
-                  onPressed: isConnected
-                      ? () => _sendDrive(robot, linear: 0, angular: step)
-                      : null,
-                ),
-                _DriveButton(
-                  icon: Icons.stop,
-                  onPressed: isConnected ? () => _sendDrive(robot, linear: 0, angular: 0) : null,
-                ),
-                _DriveButton(
-                  icon: Icons.arrow_forward,
-                  onPressed: isConnected
-                      ? () => _sendDrive(robot, linear: 0, angular: -step)
-                      : null,
-                ),
-                _DriveButton(
-                  icon: Icons.arrow_downward,
-                  onPressed: isConnected
-                      ? () => _sendDrive(robot, linear: -step, angular: 0)
-                      : null,
-                ),
-              ],
-            ),
-            if (robot.manualWsError.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(robot.manualWsError, style: const TextStyle(color: Colors.redAccent)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAutoControlCard(AuthProvider auth, RobotControlProvider robot) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.route),
-                const SizedBox(width: 8),
-                const Text('Autonomous Navigation', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => robot.getNodes(),
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _startNode.isEmpty ? null : _startNode,
-              hint: const Text('Start node'),
-              items: robot.nodes
-                  .map((node) => DropdownMenuItem(value: node, child: Text(node)))
-                  .toList(),
-              onChanged: (value) => setState(() => _startNode = value ?? ''),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _destinationNode.isEmpty ? null : _destinationNode,
-              hint: const Text('Destination node'),
-              items: robot.nodes
-                  .map((node) => DropdownMenuItem(value: node, child: Text(node)))
-                  .toList(),
-              onChanged: (value) => setState(() => _destinationNode = value ?? ''),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: (_startNode.isEmpty || _destinationNode.isEmpty)
-                      ? null
-                      : () async {
-                          try {
-                            final response = await robot.selectRoute(_startNode, _destinationNode);
-                            _setFeedback(response['message']?.toString() ?? 'Route queued');
-                          } catch (e) {
-                            _setFeedback('Route selection failed: $e', isError: true);
-                          }
-                        },
-                  icon: const Icon(Icons.send),
-                  label: const Text('Select Route (HTTP)'),
-                ),
-                if (auth.isAdmin)
-                  OutlinedButton.icon(
-                    onPressed: (_startNode.isEmpty || _destinationNode.isEmpty)
-                        ? null
-                        : () {
-                            final ok = robot.sendCommand({
-                              'command': 'NAVIGATE',
-                              'start': _startNode,
-                              'destination': _destinationNode,
-                            });
-                            if (!ok) {
-                              _setFeedback('WebSocket not connected', isError: true);
-                              return;
-                            }
-                            _setFeedback('Navigate command sent');
-                          },
-                    icon: const Icon(Icons.navigation),
-                    label: const Text('Navigate (WS)'),
-                  ),
-                if (auth.isAdmin)
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      final ok = robot.sendCommand({'command': 'CANCEL'});
-                      if (!ok) {
-                        _setFeedback('WebSocket not connected', isError: true);
-                        return;
-                      }
-                      _setFeedback('Cancel command sent');
-                    },
-                    icon: const Icon(Icons.cancel),
-                    label: const Text('Cancel (WS)'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPeripheralCard(RobotControlProvider robot) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.tune),
-                SizedBox(width: 8),
-                Text('Peripherals', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              title: const Text('LED Enabled'),
-              value: _ledEnabled,
-              onChanged: (value) => setState(() => _ledEnabled = value),
-              contentPadding: EdgeInsets.zero,
-            ),
-            const Text('LED Color'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              children: [
-                _ColorDot(
-                  color: Colors.redAccent,
-                  selected: _ledColor == Colors.redAccent,
-                  onTap: () => setState(() => _ledColor = Colors.redAccent),
-                ),
-                _ColorDot(
-                  color: Colors.amber,
-                  selected: _ledColor == Colors.amber,
-                  onTap: () => setState(() => _ledColor = Colors.amber),
-                ),
-                _ColorDot(
-                  color: Colors.blueAccent,
-                  selected: _ledColor == Colors.blueAccent,
-                  onTap: () => setState(() => _ledColor = Colors.blueAccent),
-                ),
-                _ColorDot(
-                  color: Colors.greenAccent,
-                  selected: _ledColor == Colors.greenAccent,
-                  onTap: () => setState(() => _ledColor = Colors.greenAccent),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Slider(
-              value: _brightness,
-              min: 0,
-              max: 100,
-              divisions: 100,
-              label: '${_brightness.round()}%',
-              onChanged: (value) => setState(() => _brightness = value),
-            ),
-            OutlinedButton(
-              onPressed: () {
-                final ok = robot.sendCommand({
-                  'command': 'LED',
-                  'enabled': _ledEnabled,
-                  'r': _ledColor.red,
-                  'g': _ledColor.green,
-                  'b': _ledColor.blue,
-                  'brightness': _brightness.round(),
-                });
-                _setFeedback(ok ? 'LED command sent' : 'WebSocket not connected', isError: !ok);
-              },
-              child: const Text('Apply LED'),
-            ),
-            const SizedBox(height: 12),
-            const Text('Audio Volume'),
-            Slider(
-              value: _volume,
-              min: 0,
-              max: 1,
-              divisions: 20,
-              label: '${(_volume * 100).round()}%',
-              onChanged: (value) => setState(() => _volume = value),
-            ),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: () {
+                _MoreTab(
+                  isAdmin: auth.isAdmin,
+                  ledEnabled: _ledEnabled,
+                  brightness: _brightness,
+                  volume: _volume,
+                  ledColor: _ledColor,
+                  beepHzController: _beepHzController,
+                  beepMsController: _beepMsController,
+                  onLedEnabledChanged: (value) => setState(() => _ledEnabled = value),
+                  onBrightnessChanged: (value) => setState(() => _brightness = value),
+                  onVolumeChanged: (value) => setState(() => _volume = value),
+                  onLedColorChanged: (value) => setState(() => _ledColor = value),
+                  onApplyLed: () {
+                    final ok = robot.sendCommand({
+                      'command': 'LED',
+                      'enabled': _ledEnabled,
+                      'r': (_ledColor.r * 255).round().clamp(0, 255),
+                      'g': (_ledColor.g * 255).round().clamp(0, 255),
+                      'b': (_ledColor.b * 255).round().clamp(0, 255),
+                      'brightness': _brightness.round(),
+                    });
+                    _showFeedback(ok ? 'LED command sent' : 'Manual WebSocket not connected', isError: !ok);
+                  },
+                  onApplyVolume: () {
                     final ok = robot.sendCommand({
                       'command': 'AUDIO_VOLUME',
                       'value': _volume,
                     });
-                    _setFeedback(
-                      ok ? 'Volume command sent' : 'WebSocket not connected',
-                      isError: !ok,
-                    );
+                    _showFeedback(ok ? 'Volume command sent' : 'Manual WebSocket not connected', isError: !ok);
                   },
-                  child: const Text('Set Volume'),
-                ),
-                SizedBox(
-                  width: 110,
-                  child: TextField(
-                    controller: _beepHzController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Hz'),
-                  ),
-                ),
-                SizedBox(
-                  width: 110,
-                  child: TextField(
-                    controller: _beepMsController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'ms'),
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: () {
+                  onPlayBeep: () {
                     final hz = int.tryParse(_beepHzController.text) ?? 880;
                     final ms = int.tryParse(_beepMsController.text) ?? 150;
                     final ok = robot.sendCommand({
@@ -489,62 +217,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       'hz': hz,
                       'ms': ms,
                     });
-                    _setFeedback(ok ? 'Beep command sent' : 'WebSocket not connected', isError: !ok);
+                    _showFeedback(ok ? 'Beep command sent' : 'Manual WebSocket not connected', isError: !ok);
                   },
-                  child: const Text('Play Beep'),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          _ToastOverlay(
+            toasts: robot.toasts,
+            onDismiss: (toastId) => robot.dismissToast(toastId),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tabIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _tabIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Overview'),
+          NavigationDestination(icon: Icon(Icons.gamepad_outlined), label: 'Drive'),
+          NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Routes'),
+          NavigationDestination(icon: Icon(Icons.tune), label: 'More'),
+        ],
       ),
     );
   }
 
-  Widget _buildAdminActions(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ElevatedButton.icon(
-              onPressed: () => context.push('/queue'),
-              icon: const Icon(Icons.list_alt),
-              label: const Text('Queue Control'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => context.push('/admin'),
-              icon: const Icon(Icons.admin_panel_settings),
-              label: const Text('Admin Panel'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  void _sendDriveFromJoystick(RobotControlProvider robot, double x, double y) {
+    if (robot.manualWsStatus != 'connected') {
+      return;
+    }
 
-  void _sendDrive(RobotControlProvider robot, {required double linear, required double angular}) {
-    final ok = robot.sendCommand({
+    if (_lastDriveThrottle?.isActive ?? false) {
+      return;
+    }
+
+    final speedFactor = (robot.speed / 100).clamp(0.1, 1.0);
+    final linear = y * speedFactor;
+    final angular = -x * 2.0 * speedFactor;
+
+    robot.sendCommand({
       'command': 'DRIVE_COMMAND',
       'linear_velocity': linear,
       'angular_velocity': angular,
     });
 
-    if (!ok) {
-      _setFeedback('WebSocket not connected', isError: true);
-    }
+    _lastDriveThrottle = Timer(const Duration(milliseconds: 60), () {});
   }
 
-  void _setFeedback(String message, {bool isError = false}) {
-    _clearFeedbackTimer?.cancel();
-    _clearFeedbackTimer = Timer(const Duration(seconds: 4), () {
-      if (!mounted) {
-        return;
-      }
-    });
-
+  void _showFeedback(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -560,16 +284,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Robot Notifications', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('All Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 420,
+                Expanded(
                   child: robot.notifications.isEmpty
-                      ? const Center(child: Text('No notifications yet.'))
+                      ? const Center(child: Text('No alerts recorded yet.'))
                       : ListView.separated(
                           itemCount: robot.notifications.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
@@ -597,77 +319,506 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _priorityIcon(String priority) {
     switch (priority) {
       case 'ERROR':
-        return const Icon(Icons.error, color: Colors.redAccent);
+        return const Icon(Icons.error_outline, color: Colors.redAccent);
       case 'WARN':
-        return const Icon(Icons.warning_amber, color: Colors.amber);
+        return const Icon(Icons.warning_amber_rounded, color: Colors.amber);
       default:
-        return const Icon(Icons.info, color: Colors.lightBlueAccent);
+        return const Icon(Icons.info_outline, color: Colors.lightBlueAccent);
     }
   }
 }
 
-class _TelemetryCard extends StatelessWidget {
-  final String health;
-  final int batteryLevel;
-  final String driveMode;
-  final String cargoStatus;
-  final String position;
-  final bool robotConnected;
+class _OverviewTab extends StatelessWidget {
+  final RobotStatusData status;
   final String eventsWsStatus;
-  final String? manualLockHolderName;
-  final Map<String, dynamic>? lastRoute;
 
-  const _TelemetryCard({
-    required this.health,
-    required this.batteryLevel,
-    required this.driveMode,
-    required this.cargoStatus,
-    required this.position,
-    required this.robotConnected,
+  const _OverviewTab({
+    required this.status,
     required this.eventsWsStatus,
-    required this.manualLockHolderName,
-    required this.lastRoute,
   });
 
   @override
   Widget build(BuildContext context) {
-    final start = (lastRoute?['startNode'] ?? lastRoute?['start_node'])?.toString() ?? '-';
-    final end = (lastRoute?['endNode'] ?? lastRoute?['end_node'])?.toString() ?? '-';
+    final start = (status.lastRoute?['startNode'] ?? status.lastRoute?['start_node'])?.toString() ?? '-';
+    final end = (status.lastRoute?['endNode'] ?? status.lastRoute?['end_node'])?.toString() ?? '-';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.monitor_heart),
-                const SizedBox(width: 8),
-                const Text('Telemetry', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                _StatusChip(label: 'WS: $eventsWsStatus'),
+                Row(
+                  children: [
+                    const Icon(Icons.monitor_heart),
+                    const SizedBox(width: 8),
+                    const Text('Telemetry', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    _StatusChip(label: 'Events WS: $eventsWsStatus'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _StatTile(label: 'System Health', value: status.systemHealth),
+                    _StatTile(label: 'Battery', value: '${status.batteryLevel}%'),
+                    _StatTile(label: 'Drive Mode', value: status.driveMode),
+                    _StatTile(label: 'Cargo', value: status.cargoStatus),
+                    _StatTile(label: 'Position', value: status.position),
+                    _StatTile(label: 'Robot Connection', value: status.robotConnected ? 'Connected' : 'Disconnected'),
+                    _StatTile(label: 'Lock Holder', value: status.manualLockHolderName ?? 'None'),
+                    _StatTile(label: 'Last Route', value: '$start -> $end'),
+                  ],
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DriveTab extends StatelessWidget {
+  final bool canOperate;
+  final String manualWsStatus;
+  final String manualWsError;
+  final Future<void> Function() onConnect;
+  final Future<void> Function() onDisconnect;
+  final void Function(double x, double y) onJoystickChanged;
+  final VoidCallback onEmergencyStop;
+
+  const _DriveTab({
+    required this.canOperate,
+    required this.manualWsStatus,
+    required this.manualWsError,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onJoystickChanged,
+    required this.onEmergencyStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _StatTile(label: 'System', value: health),
-                _StatTile(label: 'Battery', value: '$batteryLevel%'),
-                _StatTile(label: 'Mode', value: driveMode),
-                _StatTile(label: 'Cargo', value: cargoStatus),
-                _StatTile(label: 'Position', value: position),
-                _StatTile(label: 'Robot', value: robotConnected ? 'Connected' : 'Disconnected'),
-                _StatTile(label: 'Lock Holder', value: manualLockHolderName ?? 'None'),
-                _StatTile(label: 'Last Route', value: '$start -> $end'),
+                Row(
+                  children: [
+                    const Icon(Icons.gamepad),
+                    const SizedBox(width: 8),
+                    const Text('Manual Drive', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    _StatusChip(label: 'Drive WS: $manualWsStatus'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (!canOperate)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('Viewer role has read-only access. Drive control is disabled.'),
+                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: canOperate ? onConnect : null,
+                        icon: const Icon(Icons.link),
+                        label: const Text('Acquire Lock + Connect'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: canOperate ? onDisconnect : null,
+                        icon: const Icon(Icons.power_settings_new),
+                        label: const Text('Release + Disconnect'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (manualWsError.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(manualWsError, style: const TextStyle(color: Colors.redAccent)),
+                ],
+                const SizedBox(height: 20),
+                Center(
+                  child: Opacity(
+                    opacity: canOperate ? 1 : 0.5,
+                    child: IgnorePointer(
+                      ignoring: !canOperate,
+                      child: JoystickWidget(
+                        size: 260,
+                        onChanged: onJoystickChanged,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Center(
+                  child: OutlinedButton.icon(
+                    onPressed: canOperate ? onEmergencyStop : null,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Emergency Stop'),
+                  ),
+                ),
               ],
             ),
-          ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoutesTab extends StatelessWidget {
+  final bool canOperate;
+  final bool isAdmin;
+  final List<String> nodes;
+  final String startNode;
+  final String destinationNode;
+  final ValueChanged<String?> onStartChanged;
+  final ValueChanged<String?> onDestinationChanged;
+  final Future<void> Function() onRefreshNodes;
+  final Future<void> Function() onSelectRoute;
+  final VoidCallback onNavigateWs;
+  final VoidCallback onCancelWs;
+
+  const _RoutesTab({
+    required this.canOperate,
+    required this.isAdmin,
+    required this.nodes,
+    required this.startNode,
+    required this.destinationNode,
+    required this.onStartChanged,
+    required this.onDestinationChanged,
+    required this.onRefreshNodes,
+    required this.onSelectRoute,
+    required this.onNavigateWs,
+    required this.onCancelWs,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.route),
+                    const SizedBox(width: 8),
+                    const Text('Route Selection', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(onPressed: onRefreshNodes, icon: const Icon(Icons.refresh)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: startNode.isEmpty ? null : startNode,
+                  hint: const Text('Start node'),
+                  items: nodes.map((node) => DropdownMenuItem(value: node, child: Text(node))).toList(),
+                  onChanged: onStartChanged,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: destinationNode.isEmpty ? null : destinationNode,
+                  hint: const Text('Destination node'),
+                  items: nodes.map((node) => DropdownMenuItem(value: node, child: Text(node))).toList(),
+                  onChanged: onDestinationChanged,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: canOperate && startNode.isNotEmpty && destinationNode.isNotEmpty
+                          ? onSelectRoute
+                          : null,
+                      icon: const Icon(Icons.send),
+                      label: const Text('Queue Route (HTTP)'),
+                    ),
+                    if (isAdmin)
+                      OutlinedButton.icon(
+                        onPressed: startNode.isNotEmpty && destinationNode.isNotEmpty ? onNavigateWs : null,
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Navigate (WS)'),
+                      ),
+                    if (isAdmin)
+                      OutlinedButton.icon(
+                        onPressed: onCancelWs,
+                        icon: const Icon(Icons.cancel_outlined),
+                        label: const Text('Cancel (WS)'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MoreTab extends StatelessWidget {
+  final bool isAdmin;
+  final bool ledEnabled;
+  final double brightness;
+  final double volume;
+  final Color ledColor;
+  final TextEditingController beepHzController;
+  final TextEditingController beepMsController;
+  final ValueChanged<bool> onLedEnabledChanged;
+  final ValueChanged<double> onBrightnessChanged;
+  final ValueChanged<double> onVolumeChanged;
+  final ValueChanged<Color> onLedColorChanged;
+  final VoidCallback onApplyLed;
+  final VoidCallback onApplyVolume;
+  final VoidCallback onPlayBeep;
+
+  const _MoreTab({
+    required this.isAdmin,
+    required this.ledEnabled,
+    required this.brightness,
+    required this.volume,
+    required this.ledColor,
+    required this.beepHzController,
+    required this.beepMsController,
+    required this.onLedEnabledChanged,
+    required this.onBrightnessChanged,
+    required this.onVolumeChanged,
+    required this.onLedColorChanged,
+    required this.onApplyLed,
+    required this.onApplyVolume,
+    required this.onPlayBeep,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => context.push('/diary'),
+                  icon: const Icon(Icons.book_outlined),
+                  label: const Text('Diary'),
+                ),
+                if (isAdmin)
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/queue'),
+                    icon: const Icon(Icons.list_alt),
+                    label: const Text('Queue Control'),
+                  ),
+                if (isAdmin)
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/admin'),
+                    icon: const Icon(Icons.admin_panel_settings),
+                    label: const Text('Admin Panel'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (isAdmin) ...[
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Peripherals', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: ledEnabled,
+                    onChanged: onLedEnabledChanged,
+                    title: const Text('LED enabled'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _ColorDot(
+                        color: Colors.redAccent,
+                        selected: ledColor == Colors.redAccent,
+                        onTap: () => onLedColorChanged(Colors.redAccent),
+                      ),
+                      _ColorDot(
+                        color: Colors.amber,
+                        selected: ledColor == Colors.amber,
+                        onTap: () => onLedColorChanged(Colors.amber),
+                      ),
+                      _ColorDot(
+                        color: Colors.blueAccent,
+                        selected: ledColor == Colors.blueAccent,
+                        onTap: () => onLedColorChanged(Colors.blueAccent),
+                      ),
+                      _ColorDot(
+                        color: Colors.greenAccent,
+                        selected: ledColor == Colors.greenAccent,
+                        onTap: () => onLedColorChanged(Colors.greenAccent),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: brightness,
+                    min: 0,
+                    max: 100,
+                    divisions: 100,
+                    label: '${brightness.round()}%',
+                    onChanged: onBrightnessChanged,
+                  ),
+                  OutlinedButton(onPressed: onApplyLed, child: const Text('Apply LED')),
+                  const SizedBox(height: 8),
+                  const Text('Audio'),
+                  Slider(
+                    value: volume,
+                    min: 0,
+                    max: 1,
+                    divisions: 20,
+                    label: '${(volume * 100).round()}%',
+                    onChanged: onVolumeChanged,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(onPressed: onApplyVolume, child: const Text('Set Volume')),
+                      SizedBox(
+                        width: 110,
+                        child: TextField(
+                          controller: beepHzController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Hz'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 110,
+                        child: TextField(
+                          controller: beepMsController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'ms'),
+                        ),
+                      ),
+                      OutlinedButton(onPressed: onPlayBeep, child: const Text('Play Beep')),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ToastOverlay extends StatelessWidget {
+  final List<RobotToastItem> toasts;
+  final ValueChanged<String> onDismiss;
+
+  const _ToastOverlay({
+    required this.toasts,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 12,
+      right: 12,
+      child: IgnorePointer(
+        ignoring: false,
+        child: SizedBox(
+          width: 340,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: toasts
+                .map(
+                  (toast) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(10),
+                      color: _toastColor(toast.priority),
+                      child: InkWell(
+                        onTap: () => onDismiss(toast.toastId),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: [
+                              Icon(_toastIcon(toast.priority), color: Colors.white),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  toast.message,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.close, size: 18, color: Colors.white70),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );
+  }
+
+  Color _toastColor(String priority) {
+    switch (priority) {
+      case 'ERROR':
+        return Colors.redAccent;
+      case 'WARN':
+        return Colors.orangeAccent.shade700;
+      default:
+        return Colors.lightBlueAccent.shade700;
+    }
+  }
+
+  IconData _toastIcon(String priority) {
+    switch (priority) {
+      case 'ERROR':
+        return Icons.error_outline;
+      case 'WARN':
+        return Icons.warning_amber_rounded;
+      default:
+        return Icons.info_outline;
+    }
   }
 }
 
@@ -680,11 +831,11 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 150,
+      width: 160,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        color: Colors.white.withOpacity(0.03),
+        color: Colors.white.withValues(alpha: 0.03),
         border: Border.all(color: Colors.white12),
       ),
       child: Column(
@@ -710,33 +861,10 @@ class _StatusChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: Colors.blueGrey.withOpacity(0.2),
+        color: Colors.blueGrey.withValues(alpha: 0.2),
         border: Border.all(color: Colors.blueGrey),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11),
-      ),
-    );
-  }
-}
-
-class _DriveButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  const _DriveButton({required this.icon, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 56,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(padding: EdgeInsets.zero),
-        child: Icon(icon),
-      ),
+      child: Text(label, style: const TextStyle(fontSize: 11)),
     );
   }
 }

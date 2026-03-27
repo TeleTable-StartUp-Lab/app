@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/auth_provider.dart';
+import '../providers/robot_control_provider.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -44,6 +45,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       if (ok) {
         // After register, go to home (auto login)
+        await context.read<RobotControlProvider>().initialize();
         context.go('/dashboard');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -32,6 +32,22 @@ class RobotNotificationItem {
   }
 }
 
+class RobotToastItem {
+  final String toastId;
+  final String priority;
+  final String message;
+  final DateTime receivedAt;
+  final int durationMs;
+
+  const RobotToastItem({
+    required this.toastId,
+    required this.priority,
+    required this.message,
+    required this.receivedAt,
+    this.durationMs = 5000,
+  });
+}
+
 class RobotStatusData {
   final String systemHealth;
   final int batteryLevel;
@@ -111,6 +127,7 @@ class RobotControlProvider with ChangeNotifier {
   String _lastMessage = '';
   bool _hasLock = false;
   bool _isDisposed = false;
+  bool _initialized = false;
   RobotMode _currentMode = RobotMode.manual;
   double _speed = 50;
   double _joystickX = 0;
@@ -118,6 +135,8 @@ class RobotControlProvider with ChangeNotifier {
 
   RobotStatusData _statusData = const RobotStatusData();
   final List<RobotNotificationItem> _notifications = [];
+  final List<RobotToastItem> _toasts = [];
+  final Map<String, Timer> _toastTimers = {};
 
   RobotControlProvider(this._apiService);
 
@@ -136,6 +155,7 @@ class RobotControlProvider with ChangeNotifier {
   RobotStatusData get statusData => _statusData;
   List<String> get nodes => _statusData.nodes;
   List<RobotNotificationItem> get notifications => List.unmodifiable(_notifications);
+  List<RobotToastItem> get toasts => List.unmodifiable(_toasts);
 
   String _toWsBaseUrl() {
     return ApiService.baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
@@ -146,13 +166,20 @@ class RobotControlProvider with ChangeNotifier {
   }
 
   Future<void> initialize() async {
+    if (_initialized) {
+      if (_eventsWsStatus != 'connected' && _eventsWsStatus != 'connecting') {
+        connectEventsWs();
+      }
+      return;
+    }
+    _initialized = true;
     await loadNotificationHistory();
     connectEventsWs();
   }
 
   Future<void> loadNotificationHistory() async {
     try {
-      final data = await _apiService.getRobotNotifications(limit: 100, offset: 0);
+      final data = await _apiService.getRobotNotifications(limit: 500, offset: 0);
       _notifications
         ..clear()
         ..addAll(data.map(RobotNotificationItem.fromJson));
@@ -163,6 +190,10 @@ class RobotControlProvider with ChangeNotifier {
   }
 
   void connectEventsWs() {
+    if (_eventsWsStatus == 'connected' || _eventsWsStatus == 'connecting') {
+      return;
+    }
+
     final token = _tokenFromService();
     if (token == null || token.isEmpty) {
       _eventsWsStatus = 'error';
@@ -368,15 +399,41 @@ class RobotControlProvider with ChangeNotifier {
         final item = RobotNotificationItem.fromJson(data);
         _notifications.removeWhere((n) => n.id == item.id);
         _notifications.insert(0, item);
-        if (_notifications.length > 200) {
-          _notifications.removeRange(200, _notifications.length);
-        }
+        _pushToast(item);
       }
     } catch (_) {
       // Ignore parse errors and keep raw message as diagnostics.
     }
 
     _safeNotify();
+  }
+
+  void dismissToast(String toastId) {
+    _toastTimers.remove(toastId)?.cancel();
+    _toasts.removeWhere((t) => t.toastId == toastId);
+    _safeNotify();
+  }
+
+  void _pushToast(RobotNotificationItem notification) {
+    final toastId = '${notification.id}-${DateTime.now().millisecondsSinceEpoch}';
+    final toast = RobotToastItem(
+      toastId: toastId,
+      priority: notification.priority,
+      message: notification.message,
+      receivedAt: notification.receivedAt,
+      durationMs: 5000,
+    );
+
+    _toasts.insert(0, toast);
+    if (_toasts.length > 5) {
+      final removed = _toasts.removeLast();
+      _toastTimers.remove(removed.toastId)?.cancel();
+    }
+
+    _toastTimers[toastId]?.cancel();
+    _toastTimers[toastId] = Timer(Duration(milliseconds: toast.durationMs), () {
+      dismissToast(toastId);
+    });
   }
 
   void _safeNotify() {
@@ -389,6 +446,10 @@ class RobotControlProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    for (final timer in _toastTimers.values) {
+      timer.cancel();
+    }
+    _toastTimers.clear();
     disconnectManualWs();
     disconnectEventsWs();
     super.dispose();
