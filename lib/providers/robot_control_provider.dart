@@ -138,6 +138,9 @@ class RobotControlProvider with ChangeNotifier {
   final List<RobotToastItem> _toasts = [];
   final Map<String, Timer> _toastTimers = {};
 
+  DateTime? _lastNodesFetch;
+  final _nodesFetchThrottle = const Duration(seconds: 20);
+
   RobotControlProvider(this._apiService);
 
   String get manualWsStatus => _manualWsStatus;
@@ -329,21 +332,25 @@ class RobotControlProvider with ChangeNotifier {
   }
 
   Future<List<String>> getNodes() async {
+    final now = DateTime.now();
+    if (_lastNodesFetch != null && now.difference(_lastNodesFetch!) < _nodesFetchThrottle) {
+      return nodes;
+    }
+
     try {
       final nodes = await _apiService.getNodes();
       _statusData = _statusData.copyWith(nodes: nodes);
+      _lastNodesFetch = now; // Update timestamp only on success
       _safeNotify();
       return nodes;
     } catch (e) {
       // Robot not yet connected, will retry later when robot is available
-      print('Failed to get nodes: $e');
-      // Return empty list and retry after a delay
-      Future.delayed(const Duration(seconds: 5), () {
-        if (!_isDisposed) {
-          getNodes();
-        }
-      });
-      return [];
+      if (kDebugMode) {
+        print('Failed to get nodes: $e');
+      }
+      // Do not retry automatically here to avoid loops.
+      // The UI should trigger retries (e.g., with a refresh button).
+      return nodes; // Return existing nodes on failure
     }
   }
 

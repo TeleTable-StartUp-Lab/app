@@ -830,44 +830,63 @@ class _DiaryContentState extends State<_DiaryContent> {
     String title = '';
     String content = '';
     int workingMinutes = 60;
+    bool isPublic = false;
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Add New Entry'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => title = value,
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => title = value,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Working Minutes',
+                        border: OutlineInputBorder(),
+                        hintText: '60',
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) => workingMinutes = int.tryParse(value) ?? 60,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Content',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 5,
+                      onChanged: (value) => content = value,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: isPublic,
+                          onChanged: (value) {
+                            setState(() {
+                              isPublic = value ?? false;
+                            });
+                          },
+                        ),
+                        const Text('Make Public'),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Working Minutes',
-                    border: OutlineInputBorder(),
-                    hintText: '60',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (value) => workingMinutes = int.tryParse(value) ?? 60,
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Content',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 5,
-                  onChanged: (value) => content = value,
-                ),
-              ],
-            ),
+              );
+            },
           ),
           actions: [
             TextButton(
@@ -878,7 +897,7 @@ class _DiaryContentState extends State<_DiaryContent> {
               onPressed: () {
                 if (title.isNotEmpty && content.isNotEmpty) {
                   Provider.of<DiaryProvider>(context, listen: false)
-                      .addEntry(title, content, workingMinutes);
+                      .addEntry(title, content, workingMinutes, isPublic);
                   Navigator.of(context).pop();
                 }
               },

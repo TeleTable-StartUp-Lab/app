@@ -12,6 +12,8 @@ class DiaryScreen extends StatefulWidget {
 }
 
 class _DiaryScreenState extends State<DiaryScreen> {
+  bool _showPublic = true;
+
   @override
   void initState() {
     super.initState();
@@ -25,6 +27,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Project Diary'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () => _showEntryDialog(context),
+          ),
+        ],
       ),
       body: Consumer<DiaryProvider>(
         builder: (context, diary, _) {
@@ -53,74 +61,83 @@ class _DiaryScreenState extends State<DiaryScreen> {
             );
           }
 
+          final displayedEntries = _showPublic ? diary.publicEntries : diary.privateEntries;
+
           return Column(
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.book_outlined),
-                        const SizedBox(width: 10),
-                        Text('${diary.entries.length} entries'),
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () => _showEntryDialog(context),
-                          icon: const Icon(Icons.add),
-                        ),
-                      ],
-                    ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: SegmentedButton<bool>(
+                  style: ButtonStyle(
+                    fixedSize: MaterialStateProperty.all(const Size.fromHeight(40)),
                   ),
+                  segments: const [
+                    ButtonSegment(
+                      value: true,
+                      label: Text('Public'),
+                      icon: Icon(Icons.public),
+                    ),
+                    ButtonSegment(
+                      value: false,
+                      label: Text('Private'),
+                      icon: Icon(Icons.lock_outline),
+                    ),
+                  ],
+                  selected: {_showPublic},
+                  onSelectionChanged: (selection) {
+                    setState(() {
+                      _showPublic = selection.first;
+                    });
+                  },
                 ),
               ),
               Expanded(
-                child: diary.entries.isEmpty
+                child: displayedEntries.isEmpty
                     ? const Center(child: Text('No diary entries yet.'))
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        itemCount: diary.entries.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final entry = diary.entries[index];
-                          return Card(
-                            child: ListTile(
-                              title: Text(entry.title),
-                              subtitle: Text(
-                                '${entry.content}\n${entry.workingMinutes} minutes • ${_formatDate(entry.updatedAt)}',
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                    : RefreshIndicator(
+                        onRefresh: () => context.read<DiaryProvider>().loadEntries(),
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          itemCount: displayedEntries.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final entry = displayedEntries[index];
+                            return Card(
+                              child: ListTile(
+                                title: MarkdownBody(
+                                  data: entry.title,
+                                  shrinkWrap: true,
+                                  styleSheet: MarkdownStyleSheet(p: const TextStyle(fontSize: 16)),
+                                ),
+                                subtitle: Text(
+                                  'By ${entry.owner ?? 'Unknown'} on ${entry.createdAt.toLocal().toString().substring(0, 10)}',
+                                ),
+                                onTap: () => _showEntryDetails(context, entry),
+                                trailing: !_showPublic
+                                    ? PopupMenuButton<String>(
+                                        onSelected: (value) {
+                                          if (value == 'edit') {
+                                            _showEntryDialog(context, entry: entry);
+                                          }
+                                          if (value == 'delete') {
+                                            _confirmDelete(context, entry.id, entry.title);
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                        ],
+                                      )
+                                    : null,
                               ),
-                              isThreeLine: true,
-                              onTap: () => _showEntryDetails(context, entry),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showEntryDialog(context, entry: entry);
-                                  }
-                                  if (value == 'delete') {
-                                    _confirmDelete(context, entry.id, entry.title);
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                  PopupMenuItem(value: 'delete', child: Text('Delete')),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
               ),
             ],
           );
         },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showEntryDialog(context),
-        child: const Icon(Icons.add),
       ),
     );
   }
@@ -130,38 +147,66 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   Future<void> _showEntryDialog(BuildContext context, {DiaryEntry? entry}) async {
+    final formKey = GlobalKey<FormState>();
     final titleController = TextEditingController(text: entry?.title ?? '');
     final contentController = TextEditingController(text: entry?.content ?? '');
     final minutesController = TextEditingController(text: (entry?.workingMinutes ?? 60).toString());
+    final isPublic = entry?.isPublic ?? false;
 
     final save = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(entry == null ? 'New Entry' : 'Edit Entry'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: titleController,
-                    decoration: const InputDecoration(labelText: 'Title'),
-                  ),
-                  TextField(
-                    controller: minutesController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Working Minutes'),
-                  ),
-                  TextField(
-                    controller: contentController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(labelText: 'Content'),
-                  ),
-                ],
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Title',
+                        icon: const Icon(Icons.title),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (value) => (value?.isEmpty ?? true) ? 'Title is required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: minutesController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Working Minutes',
+                        icon: const Icon(Icons.timer_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: contentController,
+                      maxLines: 5,
+                      decoration: InputDecoration(
+                        labelText: 'Content (Markdown)',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      validator: (value) => (value?.isEmpty ?? true) ? 'Content is required' : null,
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-              ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+              ElevatedButton(
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.of(ctx).pop(true);
+                  }
+                },
+                child: const Text('Save'),
+              ),
             ],
           ),
         ) ??
@@ -188,12 +233,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final diary = context.read<DiaryProvider>();
     bool ok;
     if (entry == null) {
-      ok = await diary.addEntry(title, content, minutes);
+      ok = await diary.addEntry(title, content, minutes, isPublic);
     } else {
       ok = await diary.updateEntry(entry.copyWith(
         title: title,
         content: content,
         workingMinutes: minutes,
+        isPublic: isPublic,
       ));
     }
 
@@ -238,13 +284,20 @@ class _DiaryScreenState extends State<DiaryScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(entry.title),
+        title: MarkdownBody(
+          data: entry.title,
+          shrinkWrap: true,
+          styleSheet: MarkdownStyleSheet(p: Theme.of(context).textTheme.titleLarge),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MarkdownBody(data: entry.content),
+              MarkdownBody(
+                data: entry.content,
+                selectable: true,
+              ),
               const SizedBox(height: 10),
               Text('Working Minutes: ${entry.workingMinutes}'),
               Text('Created: ${_formatDate(entry.createdAt)}'),

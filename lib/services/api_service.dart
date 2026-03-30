@@ -164,6 +164,25 @@ class ApiService {
       throw _buildException(response, 'Failed to get diary entries');
     }
   }
+
+  /// Get all public diary entries
+  /// GET /diary/all
+  /// Returns: Array of diary entries
+  Future<List<Map<String, dynamic>>> getPublicDiaryEntries() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/diary/all'),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = (_parseBody(response) as List? ?? <dynamic>[]);
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      throw _buildException(response, 'Failed to get public diary entries');
+    }
+  }
   
   /// Create a new diary entry
   /// POST /diary

@@ -53,6 +53,130 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final robot = context.watch<RobotControlProvider>();
     final status = robot.statusData;
 
+    final destinations = [
+      const NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Overview'),
+      const NavigationDestination(icon: Icon(Icons.gamepad_outlined), label: 'Drive'),
+      const NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Routes'),
+      if (auth.isAdmin) const NavigationDestination(icon: Icon(Icons.tune), label: 'More'),
+    ];
+
+    final tabs = [
+      _OverviewTab(status: status, eventsWsStatus: robot.eventsWsStatus),
+      _DriveTab(
+        canOperate: auth.canOperate,
+        manualWsStatus: robot.manualWsStatus,
+        manualWsError: robot.manualWsError,
+        onConnect: () async {
+          try {
+            final result = await robot.acquireLock();
+            robot.connectManualWs();
+            if (!mounted) return;
+            _showFeedback(result['message']?.toString() ?? 'Drive lock acquired');
+          } catch (e) {
+            if (!mounted) return;
+            _showFeedback('Failed to acquire lock: $e', isError: true);
+          }
+        },
+        onDisconnect: () async {
+          robot.disconnectManualWs();
+          try {
+            final result = await robot.releaseLock();
+            if (!mounted) return;
+            _showFeedback(result['message']?.toString() ?? 'Drive lock released');
+          } catch (e) {
+            if (!mounted) return;
+            _showFeedback('Failed to release lock: $e', isError: true);
+          }
+        },
+        onJoystickChanged: (x, y) => _sendDriveFromJoystick(robot, x, y),
+        onEmergencyStop: () {
+          final ok = robot.sendCommand({
+            'command': 'DRIVE_COMMAND',
+            'linear_velocity': 0,
+            'angular_velocity': 0,
+          });
+          if (!ok) {
+            _showFeedback('Manual WebSocket is not connected', isError: true);
+          }
+        },
+      ),
+      _RoutesTab(
+        canOperate: auth.canOperate,
+        isAdmin: auth.isAdmin,
+        nodes: robot.nodes,
+        startNode: _startNode,
+        destinationNode: _destinationNode,
+        onStartChanged: (value) => setState(() => _startNode = value ?? ''),
+        onDestinationChanged: (value) => setState(() => _destinationNode = value ?? ''),
+        onRefreshNodes: () => robot.getNodes(),
+        onSelectRoute: () async {
+          if (_startNode.isEmpty || _destinationNode.isEmpty) return;
+          try {
+            final response = await robot.selectRoute(_startNode, _destinationNode);
+            if (!mounted) return;
+            _showFeedback(response['message']?.toString() ?? 'Route queued');
+          } catch (e) {
+            if (!mounted) return;
+            _showFeedback('Failed to select route: $e', isError: true);
+          }
+        },
+        onNavigateWs: () {
+          final ok = robot.sendCommand({
+            'command': 'NAVIGATE',
+            'start': _startNode,
+            'destination': _destinationNode,
+          });
+          _showFeedback(ok ? 'Navigate command sent' : 'Manual WebSocket not connected', isError: !ok);
+        },
+        onCancelWs: () {
+          final ok = robot.sendCommand({'command': 'CANCEL'});
+          _showFeedback(ok ? 'Cancel command sent' : 'Manual WebSocket not connected', isError: !ok);
+        },
+      ),
+      if (auth.isAdmin)
+        _MoreTab(
+          isAdmin: auth.isAdmin,
+          ledEnabled: _ledEnabled,
+          brightness: _brightness,
+          volume: _volume,
+          ledColor: _ledColor,
+          beepHzController: _beepHzController,
+          beepMsController: _beepMsController,
+          onLedEnabledChanged: (value) => setState(() => _ledEnabled = value),
+          onBrightnessChanged: (value) => setState(() => _brightness = value),
+          onVolumeChanged: (value) => setState(() => _volume = value),
+          onLedColorChanged: (value) => setState(() => _ledColor = value),
+          onApplyLed: () {
+            final ok = robot.sendCommand({
+              'command': 'LED',
+              'enabled': _ledEnabled,
+              'r': (_ledColor.red * 255).round().clamp(0, 255),
+              'g': (_ledColor.green * 255).round().clamp(0, 255),
+              'b': (_ledColor.blue * 255).round().clamp(0, 255),
+              'brightness': _brightness.round(),
+            });
+            _showFeedback(ok ? 'LED command sent' : 'Manual WebSocket not connected', isError: !ok);
+          },
+          onApplyVolume: () {
+            final ok = robot.sendCommand({
+              'command': 'AUDIO_VOLUME',
+              'value': _volume,
+            });
+            _showFeedback(ok ? 'Volume command sent' : 'Manual WebSocket not connected', isError: !ok);
+          },
+          onPlayBeep: () {
+            final hz = int.tryParse(_beepHzController.text) ?? 880;
+            final ms = int.tryParse(_beepMsController.text) ?? 150;
+            final ok = robot.sendCommand({
+              'command': 'AUDIO_BEEP',
+              'hz': hz,
+              'ms': ms,
+            });
+            _showFeedback(ok ? 'Beep command sent' : 'Manual WebSocket not connected', isError: !ok);
+          },
+        ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -111,121 +235,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             },
             child: IndexedStack(
               index: _tabIndex,
-              children: [
-                _OverviewTab(status: status, eventsWsStatus: robot.eventsWsStatus),
-                _DriveTab(
-                  canOperate: auth.canOperate,
-                  manualWsStatus: robot.manualWsStatus,
-                  manualWsError: robot.manualWsError,
-                  onConnect: () async {
-                    try {
-                      final result = await robot.acquireLock();
-                      robot.connectManualWs();
-                      if (!mounted) return;
-                      _showFeedback(result['message']?.toString() ?? 'Drive lock acquired');
-                    } catch (e) {
-                      if (!mounted) return;
-                      _showFeedback('Failed to acquire lock: $e', isError: true);
-                    }
-                  },
-                  onDisconnect: () async {
-                    robot.disconnectManualWs();
-                    try {
-                      final result = await robot.releaseLock();
-                      if (!mounted) return;
-                      _showFeedback(result['message']?.toString() ?? 'Drive lock released');
-                    } catch (e) {
-                      if (!mounted) return;
-                      _showFeedback('Failed to release lock: $e', isError: true);
-                    }
-                  },
-                  onJoystickChanged: (x, y) => _sendDriveFromJoystick(robot, x, y),
-                  onEmergencyStop: () {
-                    final ok = robot.sendCommand({
-                      'command': 'DRIVE_COMMAND',
-                      'linear_velocity': 0,
-                      'angular_velocity': 0,
-                    });
-                    if (!ok) {
-                      _showFeedback('Manual WebSocket is not connected', isError: true);
-                    }
-                  },
-                ),
-                _RoutesTab(
-                  canOperate: auth.canOperate,
-                  isAdmin: auth.isAdmin,
-                  nodes: robot.nodes,
-                  startNode: _startNode,
-                  destinationNode: _destinationNode,
-                  onStartChanged: (value) => setState(() => _startNode = value ?? ''),
-                  onDestinationChanged: (value) => setState(() => _destinationNode = value ?? ''),
-                  onRefreshNodes: () => robot.getNodes(),
-                  onSelectRoute: () async {
-                    if (_startNode.isEmpty || _destinationNode.isEmpty) return;
-                    try {
-                      final response = await robot.selectRoute(_startNode, _destinationNode);
-                      if (!mounted) return;
-                      _showFeedback(response['message']?.toString() ?? 'Route queued');
-                    } catch (e) {
-                      if (!mounted) return;
-                      _showFeedback('Failed to select route: $e', isError: true);
-                    }
-                  },
-                  onNavigateWs: () {
-                    final ok = robot.sendCommand({
-                      'command': 'NAVIGATE',
-                      'start': _startNode,
-                      'destination': _destinationNode,
-                    });
-                    _showFeedback(ok ? 'Navigate command sent' : 'Manual WebSocket not connected', isError: !ok);
-                  },
-                  onCancelWs: () {
-                    final ok = robot.sendCommand({'command': 'CANCEL'});
-                    _showFeedback(ok ? 'Cancel command sent' : 'Manual WebSocket not connected', isError: !ok);
-                  },
-                ),
-                _MoreTab(
-                  isAdmin: auth.isAdmin,
-                  ledEnabled: _ledEnabled,
-                  brightness: _brightness,
-                  volume: _volume,
-                  ledColor: _ledColor,
-                  beepHzController: _beepHzController,
-                  beepMsController: _beepMsController,
-                  onLedEnabledChanged: (value) => setState(() => _ledEnabled = value),
-                  onBrightnessChanged: (value) => setState(() => _brightness = value),
-                  onVolumeChanged: (value) => setState(() => _volume = value),
-                  onLedColorChanged: (value) => setState(() => _ledColor = value),
-                  onApplyLed: () {
-                    final ok = robot.sendCommand({
-                      'command': 'LED',
-                      'enabled': _ledEnabled,
-                      'r': (_ledColor.r * 255).round().clamp(0, 255),
-                      'g': (_ledColor.g * 255).round().clamp(0, 255),
-                      'b': (_ledColor.b * 255).round().clamp(0, 255),
-                      'brightness': _brightness.round(),
-                    });
-                    _showFeedback(ok ? 'LED command sent' : 'Manual WebSocket not connected', isError: !ok);
-                  },
-                  onApplyVolume: () {
-                    final ok = robot.sendCommand({
-                      'command': 'AUDIO_VOLUME',
-                      'value': _volume,
-                    });
-                    _showFeedback(ok ? 'Volume command sent' : 'Manual WebSocket not connected', isError: !ok);
-                  },
-                  onPlayBeep: () {
-                    final hz = int.tryParse(_beepHzController.text) ?? 880;
-                    final ms = int.tryParse(_beepMsController.text) ?? 150;
-                    final ok = robot.sendCommand({
-                      'command': 'AUDIO_BEEP',
-                      'hz': hz,
-                      'ms': ms,
-                    });
-                    _showFeedback(ok ? 'Beep command sent' : 'Manual WebSocket not connected', isError: !ok);
-                  },
-                ),
-              ],
+              children: tabs,
             ),
           ),
           _ToastOverlay(
@@ -241,12 +251,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _tabIndex = index;
           });
         },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Overview'),
-          NavigationDestination(icon: Icon(Icons.gamepad_outlined), label: 'Drive'),
-          NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Routes'),
-          NavigationDestination(icon: Icon(Icons.tune), label: 'More'),
-        ],
+        destinations: destinations,
       ),
     );
   }
@@ -629,17 +634,19 @@ class _MoreTab extends StatelessWidget {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (isAdmin)
-                  OutlinedButton.icon(
-                    onPressed: () => context.push('/admin'),
-                    icon: const Icon(Icons.admin_panel_settings),
-                    label: const Text('Admin Panel'),
-                  ),
-              ],
+            child: Center(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (isAdmin)
+                    OutlinedButton.icon(
+                      onPressed: () => context.push('/admin'),
+                      icon: const Icon(Icons.admin_panel_settings),
+                      label: const Text('Admin Panel'),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
