@@ -361,18 +361,25 @@ class _OverviewTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 2.4,
                   children: [
-                    _StatTile(label: 'System Health', value: status.systemHealth),
-                    _StatTile(label: 'Battery', value: '${status.batteryLevel}%'),
-                    _StatTile(label: 'Drive Mode', value: status.driveMode),
-                    _StatTile(label: 'Cargo', value: status.cargoStatus),
-                    _StatTile(label: 'Position', value: status.position),
-                    _StatTile(label: 'Robot Connection', value: status.robotConnected ? 'Connected' : 'Disconnected'),
-                    _StatTile(label: 'Lock Holder', value: status.manualLockHolderName ?? 'None'),
-                    _StatTile(label: 'Last Route', value: '$start -> $end'),
+                    _StatTile(icon: Icons.health_and_safety_outlined, label: 'System Health', value: status.systemHealth),
+                    _StatTile(icon: Icons.battery_charging_full, label: 'Battery', value: '${status.batteryLevel}%'),
+                    _StatTile(icon: Icons.drive_eta_outlined, label: 'Drive Mode', value: status.driveMode),
+                    _StatTile(icon: Icons.inventory_2_outlined, label: 'Cargo', value: status.cargoStatus),
+                    _StatTile(icon: Icons.location_on_outlined, label: 'Position', value: status.position),
+                    _StatTile(
+                        icon: Icons.power_outlined,
+                        label: 'Robot Connection',
+                        value: status.robotConnected ? 'Connected' : 'Disconnected'),
+                    _StatTile(icon: Icons.lock_open_outlined, label: 'Lock Holder', value: status.manualLockHolderName ?? 'None'),
+                    _StatTile(icon: Icons.route_outlined, label: 'Last Route', value: '$start -> $end'),
                   ],
                 ),
               ],
@@ -435,7 +442,7 @@ class _DriveTab extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: canOperate ? onConnect : null,
                         icon: const Icon(Icons.link),
-                        label: const Text('Acquire Lock + Connect'),
+                        label: const Text('Connect'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -443,7 +450,7 @@ class _DriveTab extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: canOperate ? onDisconnect : null,
                         icon: const Icon(Icons.power_settings_new),
-                        label: const Text('Release + Disconnect'),
+                        label: const Text('Disconnect'),
                       ),
                     ),
                   ],
@@ -557,6 +564,12 @@ class _RoutesTab extends StatelessWidget {
                     ),
                     if (isAdmin)
                       OutlinedButton.icon(
+                        onPressed: () => context.push('/queue'),
+                        icon: const Icon(Icons.list_alt),
+                        label: const Text('Queue Control'),
+                      ),
+                    if (isAdmin)
+                      OutlinedButton.icon(
                         onPressed: startNode.isNotEmpty && destinationNode.isNotEmpty ? onNavigateWs : null,
                         icon: const Icon(Icons.navigation_outlined),
                         label: const Text('Navigate (WS)'),
@@ -628,12 +641,6 @@ class _MoreTab extends StatelessWidget {
                   icon: const Icon(Icons.book_outlined),
                   label: const Text('Diary'),
                 ),
-                if (isAdmin)
-                  OutlinedButton.icon(
-                    onPressed: () => context.push('/queue'),
-                    icon: const Icon(Icons.list_alt),
-                    label: const Text('Queue Control'),
-                  ),
                 if (isAdmin)
                   OutlinedButton.icon(
                     onPressed: () => context.push('/admin'),
@@ -823,27 +830,44 @@ class _ToastOverlay extends StatelessWidget {
 }
 
 class _StatTile extends StatelessWidget {
+  final IconData icon;
   final String label;
   final String value;
 
-  const _StatTile({required this.label, required this.value});
+  const _StatTile({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 160,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white.withValues(alpha: 0.03),
-        border: Border.all(color: Colors.white12),
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).colorScheme.surface.withAlpha(150),
+        border: Border.all(color: Theme.of(context).colorScheme.surfaceVariant.withAlpha(100)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade400),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
