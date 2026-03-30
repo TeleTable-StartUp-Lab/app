@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/diary_provider.dart';
@@ -243,7 +244,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(entry.content),
+              MarkdownBody(data: entry.content),
               const SizedBox(height: 10),
               Text('Working Minutes: ${entry.workingMinutes}'),
               Text('Created: ${_formatDate(entry.createdAt)}'),

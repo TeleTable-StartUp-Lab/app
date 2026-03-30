@@ -329,10 +329,22 @@ class RobotControlProvider with ChangeNotifier {
   }
 
   Future<List<String>> getNodes() async {
-    final nodes = await _apiService.getNodes();
-    _statusData = _statusData.copyWith(nodes: nodes);
-    _safeNotify();
-    return nodes;
+    try {
+      final nodes = await _apiService.getNodes();
+      _statusData = _statusData.copyWith(nodes: nodes);
+      _safeNotify();
+      return nodes;
+    } catch (e) {
+      // Robot not yet connected, will retry later when robot is available
+      print('Failed to get nodes: $e');
+      // Return empty list and retry after a delay
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!_isDisposed) {
+          getNodes();
+        }
+      });
+      return [];
+    }
   }
 
   Future<Map<String, dynamic>> selectRoute(String start, String destination) {
