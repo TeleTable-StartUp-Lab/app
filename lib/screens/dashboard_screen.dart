@@ -409,55 +409,55 @@ class _DriveTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    return Container(
       padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.gamepad),
-                    const SizedBox(width: 8),
-                    const Text('Manual Drive', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    _StatusChip(label: 'Drive WS: $manualWsStatus'),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (!canOperate)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 12),
-                    child: Text('Viewer role has read-only access. Drive control is disabled.'),
-                  ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: canOperate ? onConnect : null,
-                        icon: const Icon(Icons.link),
-                        label: const Text('Connect'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: canOperate ? onDisconnect : null,
-                        icon: const Icon(Icons.power_settings_new),
-                        label: const Text('Disconnect'),
-                      ),
-                    ),
-                  ],
-                ),
-                if (manualWsError.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(manualWsError, style: const TextStyle(color: Colors.redAccent)),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.gamepad),
+                  const SizedBox(width: 8),
+                  const Text('Manual Drive', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  _StatusChip(label: 'Drive WS: $manualWsStatus'),
                 ],
-                const SizedBox(height: 20),
-                Center(
+              ),
+              const SizedBox(height: 12),
+              if (!canOperate)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text('Viewer role has read-only access. Drive control is disabled.'),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: canOperate ? onConnect : null,
+                      icon: const Icon(Icons.link),
+                      label: const Text('Connect'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: canOperate ? onDisconnect : null,
+                      icon: const Icon(Icons.power_settings_new),
+                      label: const Text('Disconnect'),
+                    ),
+                  ),
+                ],
+              ),
+              if (manualWsError.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(manualWsError, style: const TextStyle(color: Colors.redAccent)),
+              ],
+              const SizedBox(height: 20),
+              Expanded(
+                child: Center(
                   child: Opacity(
                     opacity: canOperate ? 1 : 0.5,
                     child: IgnorePointer(
@@ -469,19 +469,19 @@ class _DriveTab extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
-                Center(
-                  child: OutlinedButton.icon(
-                    onPressed: canOperate ? onEmergencyStop : null,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('Emergency Stop'),
-                  ),
+              ),
+              const SizedBox(height: 14),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: canOperate ? onEmergencyStop : null,
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: const Text('Emergency Stop'),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

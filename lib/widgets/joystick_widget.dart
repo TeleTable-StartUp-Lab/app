@@ -143,10 +143,10 @@ class JoystickPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     // Draw shadow
-    canvas.drawCircle(knobPosition + const Offset(2, 2), 15, knobShadowPaint);
+    canvas.drawCircle(knobPosition + const Offset(2, 2), 25, knobShadowPaint);
     
     // Draw knob
-    canvas.drawCircle(knobPosition, 15, knobPaint);
+    canvas.drawCircle(knobPosition, 25, knobPaint);
 
     // Draw knob border
     final knobBorderPaint = Paint()
@@ -154,7 +154,7 @@ class JoystickPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    canvas.drawCircle(knobPosition, 15, knobBorderPaint);
+    canvas.drawCircle(knobPosition, 25, knobBorderPaint);
   }
 
   void _drawDirectionalIndicators(Canvas canvas, Offset center, double radius) {
