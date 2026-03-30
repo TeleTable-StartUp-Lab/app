@@ -86,6 +86,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.notifications_outlined),
           ),
           IconButton(
+            tooltip: 'Diary',
+            onPressed: () => context.push('/diary'),
+            icon: const Icon(Icons.book_outlined),
+          ),
+          IconButton(
             tooltip: 'Logout',
             onPressed: () async {
               await auth.logout();
@@ -278,41 +283,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openNotifications(BuildContext context, RobotControlProvider robot) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              children: [
-                const Text('All Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: robot.notifications.isEmpty
-                      ? const Center(child: Text('No alerts recorded yet.'))
-                      : ListView.separated(
-                          itemCount: robot.notifications.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (ctx, index) {
-                            final n = robot.notifications[index];
-                            return ListTile(
-                              leading: _priorityIcon(n.priority),
-                              title: Text(n.message),
-                              subtitle: Text(
-                                '${n.priority} • ${n.receivedAt.toLocal()}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Alerts'),
             ),
-          ),
-        );
-      },
+            body: robot.notifications.isEmpty
+                ? const Center(child: Text('No alerts recorded yet.'))
+                : ListView.separated(
+                    itemCount: robot.notifications.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, index) {
+                      final n = robot.notifications[index];
+                      return ListTile(
+                        leading: _priorityIcon(n.priority),
+                        title: Text(n.message),
+                        subtitle: Text(
+                          '${n.priority} • ${n.receivedAt.toLocal()}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      );
+                    },
+                  ),
+          );
+        },
+      ),
     );
   }
 
@@ -636,11 +633,6 @@ class _MoreTab extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                ElevatedButton.icon(
-                  onPressed: () => context.push('/diary'),
-                  icon: const Icon(Icons.book_outlined),
-                  label: const Text('Diary'),
-                ),
                 if (isAdmin)
                   OutlinedButton.icon(
                     onPressed: () => context.push('/admin'),
