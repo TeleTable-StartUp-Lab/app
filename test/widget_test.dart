@@ -1,18 +1,11 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
- import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:teletable_app/main.dart';
 
 void main() {
-  testWidgets('Displays login screen by default', (WidgetTester tester) async {
+  testWidgets('Displays sign-in screen by default', (WidgetTester tester) async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -20,8 +13,9 @@ void main() {
     await tester.pumpWidget(TeleTableApp(prefs: prefs));
     await tester.pumpAndSettle();
 
-    expect(find.text('TeleTable'), findsOneWidget);
-    expect(find.text('Robot Control System'), findsOneWidget);
-    expect(find.widgetWithText(ElevatedButton, 'Login'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, 'Sign in'), findsOneWidget);
+    expect(find.text('Forgot Password?'), findsNothing);
+    expect(find.byType(TextFormField), findsNWidgets(2));
   });
 }

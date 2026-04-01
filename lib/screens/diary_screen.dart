@@ -69,7 +69,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: SegmentedButton<bool>(
                   style: ButtonStyle(
-                    fixedSize: MaterialStateProperty.all(const Size.fromHeight(40)),
+                    fixedSize: WidgetStateProperty.all(const Size.fromHeight(40)),
                   ),
                   segments: const [
                     ButtonSegment(
@@ -104,7 +104,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             final entry = displayedEntries[index];
                             return Card(
                               child: ListTile(
-                                title: Text(entry.title),
+                                title: Text(entry.previewLabel),
                                 subtitle: Text(
                                   'By ${entry.owner ?? 'Unknown'} on ${entry.createdAt.toLocal().toString().substring(0, 10)}',
                                 ),
@@ -116,7 +116,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                             _showEntryDialog(context, entry: entry);
                                           }
                                           if (value == 'delete') {
-                                            _confirmDelete(context, entry.id, entry.title);
+                                            _confirmDelete(context, entry.id, entry.previewLabel);
                                           }
                                         },
                                         itemBuilder: (_) => const [
@@ -144,10 +144,11 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   Future<void> _showEntryDialog(BuildContext context, {DiaryEntry? entry}) async {
     final formKey = GlobalKey<FormState>();
-    final titleController = TextEditingController(text: entry?.title ?? '');
     final contentController = TextEditingController(text: entry?.content ?? '');
     final minutesController = TextEditingController(text: (entry?.workingMinutes ?? 60).toString());
     final isPublic = entry?.isPublic ?? false;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final diary = context.read<DiaryProvider>();
 
     final save = await showDialog<bool>(
           context: context,
@@ -160,16 +161,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextFormField(
-                      controller: titleController,
-                      decoration: InputDecoration(
-                        labelText: 'Title',
-                        icon: const Icon(Icons.title),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      validator: (value) => (value?.isEmpty ?? true) ? 'Title is required' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
                       controller: minutesController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
@@ -181,13 +172,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: contentController,
-                      maxLines: 5,
+                      maxLines: 8,
                       decoration: InputDecoration(
-                        labelText: 'Content (Markdown)',
+                        labelText: 'Diary Entry (Markdown)',
                         alignLabelWithHint: true,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      validator: (value) => (value?.isEmpty ?? true) ? 'Content is required' : null,
+                      validator: (value) => (value?.trim().isEmpty ?? true) ? 'Content is required' : null,
                     ),
                   ],
                 ),
@@ -212,47 +203,42 @@ class _DiaryScreenState extends State<DiaryScreen> {
       return;
     }
 
-    final title = titleController.text.trim();
     final content = contentController.text.trim();
     final minutes = int.tryParse(minutesController.text.trim()) ?? 60;
 
-    if (title.isEmpty || content.isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title and content are required.')),
+    if (content.isEmpty) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(content: Text('Content is required.')),
       );
       return;
     }
 
-    final diary = context.read<DiaryProvider>();
-    bool ok;
-    if (entry == null) {
-      ok = await diary.addEntry(title, content, minutes, isPublic);
-    } else {
-      ok = await diary.updateEntry(entry.copyWith(
-        title: title,
-        content: content,
-        workingMinutes: minutes,
-        isPublic: isPublic,
-      ));
-    }
+    final ok = entry == null
+        ? await diary.addEntry(content, minutes, isPublic)
+        : await diary.updateEntry(entry.copyWith(
+            content: content,
+            workingMinutes: minutes,
+            isPublic: isPublic,
+          ));
 
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+
+    scaffoldMessenger.showSnackBar(
       SnackBar(content: Text(ok ? 'Saved' : (diary.error ?? 'Failed to save entry'))),
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context, String id, String title) async {
+  Future<void> _confirmDelete(BuildContext context, String id, String label) async {
+    final diary = context.read<DiaryProvider>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Delete Entry'),
-            content: Text('Delete "$title"?'),
+            content: Text('Delete "$label"?'),
             actions: [
               TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
               ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete')),
@@ -265,13 +251,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
       return;
     }
 
-    final diary = context.read<DiaryProvider>();
     final ok = await diary.deleteEntry(id);
 
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+
+    scaffoldMessenger.showSnackBar(
       SnackBar(content: Text(ok ? 'Entry deleted' : (diary.error ?? 'Delete failed'))),
     );
   }
@@ -280,7 +266,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(entry.title),
+        title: Text(entry.detailTitle),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

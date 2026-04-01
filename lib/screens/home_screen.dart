@@ -27,6 +27,27 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      title: const Text('Log out'),
+                      content: const Text('Are you sure you want to log out?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(true),
+                          child: const Text('Log out'),
+                        ),
+                      ],
+                    ),
+                  ) ??
+                  false;
+              if (!confirmed) {
+                return;
+              }
               await authProvider.logout();
               if (mounted) {
                 context.go('/login');

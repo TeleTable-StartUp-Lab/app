@@ -49,6 +49,12 @@ class TeleTableApp extends StatelessWidget {
                 builder: (context, state) => const LoginScreen(),
               ),
               GoRoute(
+                path: '/login/add-account',
+                builder: (context, state) => const LoginScreen(
+                  allowBackToDashboard: true,
+                ),
+              ),
+              GoRoute(
                 path: '/register',
                 builder: (context, state) => const RegisterScreen(),
               ),
@@ -77,11 +83,12 @@ class TeleTableApp extends StatelessWidget {
               final isAuthenticated = authProvider.isAuthenticated;
               final isAdmin = authProvider.isAdmin;
               final isLoginRoute = state.matchedLocation == '/login';
+              final isAddAccountRoute = state.matchedLocation == '/login/add-account';
               final isRegisterRoute = state.matchedLocation == '/register';
               final isAdminRoute = state.matchedLocation == '/admin';
               final isQueueRoute = state.matchedLocation == '/queue';
               
-              if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
+              if (!isAuthenticated && !isLoginRoute && !isAddAccountRoute && !isRegisterRoute) {
                 return '/login';
               }
               if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {

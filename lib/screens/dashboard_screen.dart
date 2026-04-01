@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/diary_provider.dart';
 import '../providers/robot_control_provider.dart';
 import '../widgets/joystick_widget.dart';
 
@@ -89,16 +90,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
         },
         onJoystickChanged: (x, y) => _sendDriveFromJoystick(robot, x, y),
-        onEmergencyStop: () {
-          final ok = robot.sendCommand({
-            'command': 'DRIVE_COMMAND',
-            'linear_velocity': 0,
-            'angular_velocity': 0,
-          });
-          if (!ok) {
-            _showFeedback('Manual WebSocket is not connected', isError: true);
-          }
-        },
       ),
       _RoutesTab(
         canOperate: auth.canOperate,
@@ -150,9 +141,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final ok = robot.sendCommand({
               'command': 'LED',
               'enabled': _ledEnabled,
-              'r': (_ledColor.red * 255).round().clamp(0, 255),
-              'g': (_ledColor.green * 255).round().clamp(0, 255),
-              'b': (_ledColor.blue * 255).round().clamp(0, 255),
+              'r': (_ledColor.r * 255).round().clamp(0, 255),
+              'g': (_ledColor.g * 255).round().clamp(0, 255),
+              'b': (_ledColor.b * 255).round().clamp(0, 255),
               'brightness': _brightness.round(),
             });
             _showFeedback(ok ? 'LED command sent' : 'Manual WebSocket not connected', isError: !ok);
@@ -215,14 +206,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.book_outlined),
           ),
           IconButton(
-            tooltip: 'Logout',
-            onPressed: () async {
-              await auth.logout();
-              if (context.mounted) {
-                context.go('/login');
-              }
-            },
-            icon: const Icon(Icons.logout),
+            tooltip: 'Account',
+            onPressed: () => _showAccountSheet(auth),
+            icon: const Icon(Icons.account_circle_outlined),
           ),
         ],
       ),
@@ -276,6 +262,236 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     _lastDriveThrottle = Timer(const Duration(milliseconds: 60), () {});
+  }
+
+  Future<void> _showAccountSheet(AuthProvider auth) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Account',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(auth.username ?? auth.email ?? 'Signed in user'),
+                  subtitle: Text(auth.email ?? auth.role),
+                ),
+                if (auth.savedUsers.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Saved users',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  ...auth.savedUsers.map(
+                    (savedUser) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      onTap: savedUser.userId == auth.activeUserId
+                          ? null
+                          : () async {
+                              Navigator.of(sheetContext).pop();
+                              await _switchAccount(savedUser);
+                            },
+                      leading: CircleAvatar(
+                        child: Text(_savedUserInitials(savedUser)),
+                      ),
+                      title: Text(savedUser.name ?? savedUser.email ?? 'Unknown user'),
+                      subtitle: Text(savedUser.email ?? savedUser.role),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (savedUser.userId == auth.activeUserId)
+                            const Icon(Icons.check_circle, color: Colors.green),
+                          IconButton(
+                            tooltip: 'Remove saved user',
+                            onPressed: () async {
+                              Navigator.of(sheetContext).pop();
+                              await _removeSavedUser(savedUser);
+                            },
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.person_add_alt_1),
+                  title: const Text('Add account'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    context.push('/login/add-account');
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Log out'),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _confirmAndLogout();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _switchAccount(SavedUserSession session) async {
+    final auth = context.read<AuthProvider>();
+    final success = await auth.switchToSavedUser(session.userId);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (!success) {
+      _showFeedback(auth.errorMessage ?? 'Failed to switch account', isError: true);
+      return;
+    }
+
+    await _refreshSessionBoundState();
+
+    if (!mounted) {
+      return;
+    }
+
+    _showFeedback('Switched to ${session.name ?? session.email ?? 'saved user'}');
+    context.go('/dashboard');
+  }
+
+  Future<void> _removeSavedUser(SavedUserSession session) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Remove saved user'),
+            content: Text('Remove ${session.name ?? session.email ?? 'this user'} from this device?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final wasActive = session.userId == auth.activeUserId;
+    await auth.removeSavedUser(session.userId);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (wasActive) {
+      await _resetAfterLogout();
+      if (!mounted) {
+        return;
+      }
+      context.go('/login');
+      return;
+    }
+
+    _showFeedback('Saved user removed');
+  }
+
+  Future<void> _confirmAndLogout() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Log out'),
+            content: const Text('Are you sure you want to log out?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Log out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    await auth.logout();
+
+    if (!mounted) {
+      return;
+    }
+
+    await _resetAfterLogout();
+
+    if (!mounted) {
+      return;
+    }
+
+    context.go('/login');
+  }
+
+  Future<void> _refreshSessionBoundState() async {
+    final robot = context.read<RobotControlProvider>();
+    final diary = context.read<DiaryProvider>();
+
+    robot.resetSession();
+    diary.clearEntries();
+
+    await robot.initialize();
+    unawaited(robot.getNodes());
+    unawaited(diary.loadEntries());
+  }
+
+  Future<void> _resetAfterLogout() async {
+    final robot = context.read<RobotControlProvider>();
+    final diary = context.read<DiaryProvider>();
+
+    robot.resetSession();
+    diary.clearEntries();
+  }
+
+  String _savedUserInitials(SavedUserSession session) {
+    final source = (session.name ?? session.email ?? '').trim();
+    if (source.isEmpty) {
+      return '?';
+    }
+
+    final parts = source.split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      return parts.first.substring(0, 1).toUpperCase();
+    }
+
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
   }
 
   void _showFeedback(String message, {bool isError = false}) {
@@ -400,7 +616,6 @@ class _DriveTab extends StatelessWidget {
   final Future<void> Function() onConnect;
   final Future<void> Function() onDisconnect;
   final void Function(double x, double y) onJoystickChanged;
-  final VoidCallback onEmergencyStop;
 
   const _DriveTab({
     required this.canOperate,
@@ -409,7 +624,6 @@ class _DriveTab extends StatelessWidget {
     required this.onConnect,
     required this.onDisconnect,
     required this.onJoystickChanged,
-    required this.onEmergencyStop,
   });
 
   @override
@@ -473,14 +687,6 @@ class _DriveTab extends StatelessWidget {
                       ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Center(
-                child: OutlinedButton.icon(
-                  onPressed: canOperate ? onEmergencyStop : null,
-                  icon: const Icon(Icons.stop_circle_outlined),
-                  label: const Text('Emergency Stop'),
                 ),
               ),
             ],

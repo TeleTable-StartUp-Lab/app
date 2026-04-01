@@ -392,14 +392,26 @@ class RobotControlProvider with ChangeNotifier {
     disconnectManualWs();
   }
 
-  void emergencyStop() {
-    sendCommand({
-      'command': 'DRIVE_COMMAND',
-      'linear_velocity': 0,
-      'angular_velocity': 0,
-    });
+  void resetSession() {
+    disconnectManualWs();
+    disconnectEventsWs();
+    _initialized = false;
+    _manualWsError = '';
+    _eventsWsError = '';
+    _lastMessage = '';
+    _hasLock = false;
+    _currentMode = RobotMode.manual;
+    _speed = 50;
     _joystickX = 0;
     _joystickY = 0;
+    _statusData = const RobotStatusData();
+    _notifications.clear();
+    for (final timer in _toastTimers.values) {
+      timer.cancel();
+    }
+    _toastTimers.clear();
+    _toasts.clear();
+    _lastNodesFetch = null;
     _safeNotify();
   }
 

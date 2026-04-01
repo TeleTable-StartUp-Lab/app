@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Override with: flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3003
@@ -8,44 +7,29 @@ class ApiService {
     'API_BASE_URL',
     defaultValue: 'https://teletable.net/api',
   );
-  
-  static const String _tokenKey = 'auth_token';
+
   String? _token;
-  
-  // Initialize and load token from storage
-  Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_tokenKey);
-  }
-  
-  // Set the JWT token after login
-  Future<void> setToken(String token) async {
+
+  Future<void> setToken(String? token) async {
     _token = token;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
   }
-  
-  // Clear the token on logout
+
   Future<void> clearToken() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
   }
-  
-  // Check if user is logged in
+
   bool get isLoggedIn => _token != null;
   String? get token => _token;
-  
-  // Get authorization headers
+
   Map<String, String> get _headers {
     final headers = {
       'Content-Type': 'application/json',
     };
-    
+
     if (_token != null) {
       headers['Authorization'] = 'Bearer $_token';
     }
-    
+
     return headers;
   }
 
@@ -123,7 +107,7 @@ class ApiService {
     if (response.statusCode == 200) {
       final data = _parseBody(response) as Map<String, dynamic>? ?? <String, dynamic>{};
       final token = data['token'] as String;
-      setToken(token);
+      await setToken(token);
       return token;
     } else {
       throw _buildException(response, 'Login failed');
