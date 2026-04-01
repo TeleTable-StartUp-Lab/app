@@ -104,11 +104,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             final entry = displayedEntries[index];
                             return Card(
                               child: ListTile(
-                                title: MarkdownBody(
-                                  data: entry.title,
-                                  shrinkWrap: true,
-                                  styleSheet: MarkdownStyleSheet(p: const TextStyle(fontSize: 16)),
-                                ),
+                                title: Text(entry.title),
                                 subtitle: Text(
                                   'By ${entry.owner ?? 'Unknown'} on ${entry.createdAt.toLocal().toString().substring(0, 10)}',
                                 ),
@@ -284,20 +280,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: MarkdownBody(
-          data: entry.title,
-          shrinkWrap: true,
-          styleSheet: MarkdownStyleSheet(p: Theme.of(context).textTheme.titleLarge),
-        ),
+        title: Text(entry.title),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MarkdownBody(
-                data: entry.content,
-                selectable: true,
-              ),
+              MarkdownBody(data: entry.content),
               const SizedBox(height: 10),
               Text('Working Minutes: ${entry.workingMinutes}'),
               Text('Created: ${_formatDate(entry.createdAt)}'),
