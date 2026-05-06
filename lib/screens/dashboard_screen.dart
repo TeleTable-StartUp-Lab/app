@@ -26,6 +26,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _ledEnabled = true;
   Color _ledColor = const Color(0xFFFFB450);
   Timer? _lastDriveThrottle;
+  // Drive command throttling and queuing (match website behavior)
+  static const int _driveCommandIntervalMs = 75; // website uses 75ms
+  static const double _driveCommandEpsilon = 0.02;
+  static const double _maxLinear = 1.0;
+  static const double _maxAngular = 2.0;
+
+  double _lastSentLinear = 0.0;
+  double _lastSentAngular = 0.0;
+  double? _queuedLinear;
+  double? _queuedAngular;
 
   final _beepHzController = TextEditingController(text: '880');
   final _beepMsController = TextEditingController(text: '150');
@@ -247,21 +257,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    if (_lastDriveThrottle?.isActive ?? false) {
+    // Normalize + clamp inputs (joystick already gives -1..1, but be safe)
+    final normX = x.clamp(-1.0, 1.0);
+    final normY = y.clamp(-1.0, 1.0);
+
+    // Calculate velocities matching website logic and round to 2 decimals
+    final linear = double.parse((-normY * _maxLinear).toStringAsFixed(2));
+    final angular = double.parse((-normX * _maxAngular).toStringAsFixed(2));
+
+    // If no throttle active, send immediately only if meaningful change
+    if (_lastDriveThrottle == null || !(_lastDriveThrottle?.isActive ?? false)) {
+      if ((linear - _lastSentLinear).abs() > _driveCommandEpsilon ||
+          (angular - _lastSentAngular).abs() > _driveCommandEpsilon) {
+        final sent = robot.sendCommand({
+          'command': 'DRIVE_COMMAND',
+          'linear_velocity': linear,
+          'angular_velocity': angular,
+        });
+        if (sent) {
+          _lastSentLinear = linear;
+          _lastSentAngular = angular;
+        }
+      }
+
+      // Start throttle timer that will flush queued command when it fires
+      _lastDriveThrottle = Timer(Duration(milliseconds: _driveCommandIntervalMs), () {
+        _lastDriveThrottle = null;
+        _flushQueuedDriveCommand(robot);
+      });
+    } else {
+      // Throttle active: store as queued command (always overwrite with latest)
+      _queuedLinear = linear;
+      _queuedAngular = angular;
+    }
+  }
+
+  void _flushQueuedDriveCommand(RobotControlProvider robot) {
+    final ql = _queuedLinear;
+    final qa = _queuedAngular;
+
+    // Clear queued regardless — we'll requeue on subsequent input if needed
+    _queuedLinear = null;
+    _queuedAngular = null;
+
+    if (ql == null || qa == null) return;
+
+    // Only send if change is meaningful compared to last sent
+    if ((ql - _lastSentLinear).abs() <= _driveCommandEpsilon &&
+        (qa - _lastSentAngular).abs() <= _driveCommandEpsilon) {
       return;
     }
 
-    final speedFactor = (robot.speed / 100).clamp(0.1, 1.0);
-    final linear = y * speedFactor;
-    final angular = -x * 2.0 * speedFactor;
-
-    robot.sendCommand({
+    final sent = robot.sendCommand({
       'command': 'DRIVE_COMMAND',
-      'linear_velocity': linear,
-      'angular_velocity': angular,
+      'linear_velocity': ql,
+      'angular_velocity': qa,
     });
+    if (sent) {
+      _lastSentLinear = ql;
+      _lastSentAngular = qa;
+    }
 
-    _lastDriveThrottle = Timer(const Duration(milliseconds: 60), () {});
+    // Start another throttle window to allow next flush
+    _lastDriveThrottle = Timer(Duration(milliseconds: _driveCommandIntervalMs), () {
+      _lastDriveThrottle = null;
+      _flushQueuedDriveCommand(robot);
+    });
   }
 
   Future<void> _showAccountSheet(AuthProvider auth) async {
